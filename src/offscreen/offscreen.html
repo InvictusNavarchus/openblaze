@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>OpenBlaze Offscreen</title>
+  <style>
+    body {
+      font-size: initial;
+      font-family: initial;
+      margin: 0;
+      padding: 0;
+    }
+    
+    #clip-write {
+      position: fixed;
+      top: -20000px;
+      left: -20000px;
+      width: 200px;
+      height: 200px;
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div style='position: fixed; top: -20000px'>
+    <textarea id="clip-write"></textarea>
+  </div>
+</body>
+</html>

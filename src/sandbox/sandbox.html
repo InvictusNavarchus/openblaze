@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenBlaze Sandbox</title>
+    <style>
+        body {
+            font-size: initial;
+            font-family: initial;
+            margin: 0;
+            padding: 0;
+        }
+        
+        #insertion-html {
+            width: 200px;
+            height: 200px;
+            border: none;
+            outline: none;
+            resize: none;
+            font-family: inherit;
+            font-size: inherit;
+        }
+        
+        #abs-font-size {
+            position: absolute;
+            top: -1000px;
+            left: -1000px;
+            visibility: hidden;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sandbox for safe text processing -->
+    <div id="insertion-html" contenteditable="true" spellcheck="false" role="textbox"></div>
+    <div id="abs-font-size">placeholder text</div>
+</body>
+</html>

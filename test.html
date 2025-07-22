@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenBlaze Test Page</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: linear-gradient(135deg, #00acc0, #0097a7);
+            color: white;
+            border-radius: 12px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        
+        .test-section h3 {
+            margin-bottom: 15px;
+            color: #00acc0;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 10px;
+            font-family: inherit;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #00acc0;
+            box-shadow: 0 0 0 3px rgba(0, 172, 192, 0.1);
+        }
+        
+        .contenteditable {
+            min-height: 100px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            margin-bottom: 10px;
+        }
+        
+        .contenteditable:focus {
+            outline: none;
+            border-color: #00acc0;
+            box-shadow: 0 0 0 3px rgba(0, 172, 192, 0.1);
+        }
+        
+        .instructions {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        
+        .snippet-list {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .snippet-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .snippet-item:last-child {
+            border-bottom: none;
+        }
+        
+        .shortcut {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: #00acc0;
+        }
+        
+        .description {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            background: #4caf50;
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .status.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 OpenBlaze Test Page</h1>
+        <p>Test your text expansion snippets here!</p>
+    </div>
+
+    <div class="instructions">
+        <h3>📝 How to Test</h3>
+        <ol>
+            <li>Make sure the OpenBlaze extension is installed and enabled</li>
+            <li>Try typing any of the shortcuts below in the text fields</li>
+            <li>Press <strong>Space</strong> after typing a shortcut to expand it</li>
+            <li>Use <strong>Ctrl+Shift+Space</strong> to open the snippet picker</li>
+        </ol>
+    </div>
+
+    <div class="snippet-list">
+        <h3>🔥 Default Snippets to Try</h3>
+        <div class="snippet-item">
+            <span><span class="shortcut">addr</span> - Your address</span>
+            <span class="description">Expands to your full address</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">email</span> - Email address</span>
+            <span class="description">Your professional email</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">phone</span> - Phone number</span>
+            <span class="description">Your phone number</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">sig</span> - Email signature</span>
+            <span class="description">Professional email signature</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">date</span> - Current date</span>
+            <span class="description">Today's date</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">time</span> - Current time</span>
+            <span class="description">Current time</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">thanks</span> - Thank you</span>
+            <span class="description">Polite thank you message</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">meeting</span> - Meeting request</span>
+            <span class="description">Professional meeting request template</span>
+        </div>
+        <div class="snippet-item">
+            <span><span class="shortcut">lorem</span> - Lorem ipsum</span>
+            <span class="description">Lorem ipsum placeholder text</span>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h3>📧 Email Field Test</h3>
+        <p>Test snippets in an email input field:</p>
+        <input type="email" placeholder="Try typing 'email' + space here...">
+    </div>
+
+    <div class="test-section">
+        <h3>📝 Text Input Test</h3>
+        <p>Test snippets in a regular text input:</p>
+        <input type="text" placeholder="Try typing 'addr' + space here...">
+    </div>
+
+    <div class="test-section">
+        <h3>📄 Textarea Test</h3>
+        <p>Test snippets in a textarea (great for longer content):</p>
+        <textarea rows="5" placeholder="Try typing 'sig' + space here for your email signature..."></textarea>
+    </div>
+
+    <div class="test-section">
+        <h3>✏️ Contenteditable Test</h3>
+        <p>Test snippets in a contenteditable div:</p>
+        <div class="contenteditable" contenteditable="true">
+            Try typing 'meeting' + space here for a meeting request template...
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h3>🕒 Dynamic Snippets Test</h3>
+        <p>Test dynamic snippets with variables:</p>
+        <textarea rows="4" placeholder="Try typing 'br' + space for 'Best regards' with name variable..."></textarea>
+    </div>
+
+    <div class="test-section">
+        <h3>📊 Search Test</h3>
+        <p>Test the search functionality:</p>
+        <input type="search" placeholder="Try typing 'date' + space here...">
+    </div>
+
+    <div class="status" id="status">
+        OpenBlaze is working! 🎉
+    </div>
+
+    <script>
+        // Simple script to show status when text expansion happens
+        let lastValue = '';
+        
+        function checkForExpansion(element) {
+            const currentValue = element.value || element.textContent || '';
+            if (currentValue.length > lastValue.length + 5) {
+                showStatus('Text expanded! 🚀');
+            }
+            lastValue = currentValue;
+        }
+        
+        function showStatus(message) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.classList.add('show');
+            setTimeout(() => {
+                status.classList.remove('show');
+            }, 3000);
+        }
+        
+        // Add event listeners to all input fields
+        document.querySelectorAll('input, textarea, [contenteditable]').forEach(element => {
+            element.addEventListener('input', () => checkForExpansion(element));
+        });
+        
+        // Show welcome message
+        setTimeout(() => {
+            showStatus('Ready to test OpenBlaze! 🔥');
+        }, 1000);
+    </script>
+</body>
+</html>
