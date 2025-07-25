@@ -77,11 +77,15 @@ export default defineConfig(({ mode }) => {
       target: 'baseline-widely-available', // Vite 7 default
       outDir: 'dist',
       emptyOutDir: true,
-      sourcemap: !isProduction ? 'cheap-module-source-map' : false,
+      sourcemap: !isProduction,
       minify: isProduction,
       rollupOptions: {
         input: {
           background: resolve(__dirname, 'src/background/background.ts'),
+          'types-global': resolve(__dirname, 'src/content/types-global.js'),
+          'utils-global': resolve(__dirname, 'src/content/utils-global.js'),
+          'form-handler-global': resolve(__dirname, 'src/content/form-handler-global.js'),
+          'keyboard-shortcuts-global': resolve(__dirname, 'src/content/keyboard-shortcuts-global.js'),
           contentScript: resolve(__dirname, 'src/content/contentScript.ts'),
           inPageNotifier: resolve(__dirname, 'src/content/inPageNotifier.ts'),
           popup: resolve(__dirname, 'src/popup/popup.ts'),
@@ -93,11 +97,11 @@ export default defineConfig(({ mode }) => {
           entryFileNames: 'js/[name].js',
           chunkFileNames: 'js/[name]-[hash].js',
           assetFileNames: (assetInfo) => {
-            const name = assetInfo.name || '';
-            if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(name)) {
+            const fileName = assetInfo.names?.[0] || '';
+            if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(fileName)) {
               return `images/[name][extname]`;
             }
-            if (/\.css$/i.test(name)) {
+            if (/\.css$/i.test(fileName)) {
               return `css/[name][extname]`;
             }
             return `assets/[name]-[hash][extname]`;

@@ -1,11 +1,18 @@
-import { NotificationData } from '../types';
-import { log } from '../utils';
+/// <reference path="./global-types.d.ts" />
 
-interface NotificationElement extends HTMLElement {
-  _openBlazeNotification?: boolean;
-}
+import type { NotificationData } from '../types';
 
-class InPageNotifier {
+(function () {
+  "use strict";
+
+  // Access global utilities
+  const { log } = window.OpenBlaze_Utils;
+
+  interface NotificationElement extends HTMLElement {
+    _openBlazeNotification?: boolean;
+  }
+
+  class InPageNotifier {
   private container: HTMLElement | null = null;
   private notifications: Map<string, NotificationElement> = new Map();
   private notificationCount = 0;
@@ -366,7 +373,9 @@ class InPageNotifier {
   return (window as any)._openBlazeNotifier.show(data);
 };
 
-// Initialize if not already done
-if (!(window as any)._openBlazeNotifier) {
-  (window as any)._openBlazeNotifier = new InPageNotifier();
-}
+  // Initialize if not already done
+  if (!(window as any)._openBlazeNotifier) {
+    (window as any)._openBlazeNotifier = new InPageNotifier();
+  }
+
+})();

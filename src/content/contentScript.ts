@@ -1,27 +1,35 @@
-import {
+/// <reference path="./global-types.d.ts" />
+
+import type {
   Snippet,
   Settings,
   ExpansionContext,
   TextInputInfo,
   Message
 } from '../types';
-import {
-  getBrowser,
-  log,
-  isEditableElement,
-  getElementText,
-  setElementText,
-  debounce
-} from '../utils';
-import { getFormContext } from '../utils/formHandler';
-import { initializeKeyboardShortcuts, registerShortcut } from '../utils/keyboardShortcuts';
+
+(function () {
+  "use strict";
+
+  // Access global namespaces
+  const {
+    getBrowser,
+    log,
+    isEditableElement,
+    // getElementText, // TODO: Use for text tracking
+    setElementText,
+    debounce
+  } = window.OpenBlaze_Utils;
+
+  // const { getFormContext } = window.OpenBlaze_FormHandler; // TODO: Use for form context detection
+  const { initializeKeyboardShortcuts, registerShortcut } = window.OpenBlaze_KeyboardShortcuts;
 
 class ContentScript {
   private browser = getBrowser();
   private settings: Settings | null = null;
   private isEnabled = true;
   private currentElement: HTMLElement | null = null;
-  private lastTypedText = '';
+  // private lastTypedText = ''; // TODO: Use for text tracking
   private expansionInProgress = false;
   private debouncedCheckExpansion: () => void;
 
@@ -136,7 +144,7 @@ class ContentScript {
     if (!isEditableElement(target)) return;
 
     this.currentElement = target;
-    this.lastTypedText = getElementText(target);
+    // TODO: Track text changes for better expansion detection
     
     // Check for expansion after a short delay
     this.debouncedCheckExpansion();
@@ -523,5 +531,7 @@ class ContentScript {
   }
 }
 
-// Initialize the content script
-new ContentScript();
+  // Initialize the content script
+  new ContentScript();
+
+})();

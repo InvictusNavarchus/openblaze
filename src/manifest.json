@@ -45,6 +45,10 @@
     {
       "matches": ["<all_urls>"],
       "js": [
+        "js/types-global.js",
+        "js/utils-global.js",
+        "js/form-handler-global.js",
+        "js/keyboard-shortcuts-global.js",
         "js/inPageNotifier.js",
         "js/contentScript.js"
       ],
