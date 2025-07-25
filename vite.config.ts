@@ -172,18 +172,8 @@ export default defineConfig(({ mode }) => {
             }
             return `assets/[name]-[hash][extname]`;
           },
-          // Force content scripts to be self-contained by preventing chunk creation
-          manualChunks: (id) => {
-            // Check if this module is imported by content scripts
-            if (id.includes('src/utils/') || id.includes('src/types/')) {
-              // Don't create chunks for utility modules - inline them
-              return undefined;
-            }
-            // Allow other modules to be chunked normally
-            return undefined;
-          },
-          // Set a very high minimum chunk size to force inlining
-          experimentalMinChunkSize: 100000,
+          // Allow normal chunking for non-content-script files
+          // Content scripts are built separately by our custom plugin
         },
       },
     },
