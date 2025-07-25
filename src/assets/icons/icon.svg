@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00acc0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0097a7;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="56" fill="url(#grad1)" stroke="#ffffff" stroke-width="4"/>
+  
+  <!-- Lightning bolt representing speed/expansion -->
+  <path d="M45 35 L55 35 L48 55 L58 55 L45 85 L52 85 L58 65 L48 65 L55 45 L45 45 Z" 
+        fill="#ffffff" stroke="#00acc0" stroke-width="1"/>
+  
+  <!-- Text cursor/expansion indicator -->
+  <rect x="70" y="45" width="2" height="20" fill="#ffffff"/>
+  <rect x="75" y="50" width="8" height="2" fill="#ffffff"/>
+  <rect x="75" y="55" width="12" height="2" fill="#ffffff"/>
+  <rect x="75" y="60" width="6" height="2" fill="#ffffff"/>
+  
+  <!-- Small dots indicating expansion -->
+  <circle cx="85" cy="40" r="2" fill="#ffffff" opacity="0.8"/>
+  <circle cx="90" cy="45" r="1.5" fill="#ffffff" opacity="0.6"/>
+  <circle cx="88" cy="70" r="1.5" fill="#ffffff" opacity="0.6"/>
+</svg>
