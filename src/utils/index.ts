@@ -173,8 +173,29 @@ export function setElementText(element: HTMLElement, text: string): void {
   }
 }
 
-// Logging utility
-export function log(level: 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
+// Logging utility with all log levels
+export function log(level: 'trace' | 'debug' | 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
   const prefix = '[OpenBlaze]';
-  console[level](prefix, message, ...args);
+  const timestamp = new Date().toISOString();
+  const formattedPrefix = `${prefix}[${timestamp}][${level.toUpperCase()}]`;
+
+  switch (level) {
+    case 'trace':
+      console.trace(formattedPrefix, message, ...args);
+      break;
+    case 'debug':
+      console.debug(formattedPrefix, message, ...args);
+      break;
+    case 'info':
+      console.info(formattedPrefix, message, ...args);
+      break;
+    case 'warn':
+      console.warn(formattedPrefix, message, ...args);
+      break;
+    case 'error':
+      console.error(formattedPrefix, message, ...args);
+      break;
+    default:
+      console.log(formattedPrefix, message, ...args);
+  }
 }
