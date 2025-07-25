@@ -1,6 +1,6 @@
 {
   "name": "openblaze",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Open source text expansion Chrome extension - reverse engineered from TextBlaze",
   "main": "dist/background.js",
   "scripts": {

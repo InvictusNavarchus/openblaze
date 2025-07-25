@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "OpenBlaze: Text Expansion & Snippets",
   "description": "Open source text expansion tool. Create smart text snippets to boost productivity and save keystrokes!",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "minimum_chrome_version": "88",
   "permissions": [
     "tabs",
