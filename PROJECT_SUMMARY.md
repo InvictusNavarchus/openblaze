@@ -31,7 +31,7 @@ OpenBlaze is a complete, open-source Chrome extension that reverse-engineers Tex
 - **TypeScript**: Full type safety and modern development
 - **Modular Architecture**: Clean, maintainable code structure
 - **Comprehensive Testing**: Unit tests with Jest
-- **Modern Build System**: Webpack-based development pipeline
+- **Modern Build System**: Vite 7-based development pipeline with Rust-powered performance
 - **Code Quality**: ESLint, Prettier, and strict TypeScript
 
 ## 📁 Project Structure

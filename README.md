@@ -133,9 +133,14 @@ src/
 
 ### Building
 
+The project uses **Vite 7** as the build tool, providing fast builds and excellent development experience.
+
 ```bash
 # Development build with watch mode
 pnpm run dev
+
+# Development build (single run)
+pnpm run build:dev
 
 # Production build
 pnpm run build
@@ -146,6 +151,15 @@ pnpm run type-check
 # Linting
 pnpm run lint
 ```
+
+#### Build System Features
+
+- **Vite 7**: Latest version with Rust-powered performance improvements
+- **TypeScript Support**: Full TypeScript compilation with type checking
+- **Source Maps**: Available in development builds for debugging
+- **Asset Handling**: Automatic copying of manifest, HTML, CSS, and image files
+- **Browser Extension Optimization**: Configured specifically for Chrome extension development
+- **Watch Mode**: Automatic rebuilding during development
 
 ### Architecture
 
@@ -185,7 +199,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - Inspired by TextBlaze for the original concept
-- Built with TypeScript, Webpack, and modern web technologies
+- Built with TypeScript, Vite 7, and modern web technologies
 - Thanks to all contributors and users
 
 ## Support
