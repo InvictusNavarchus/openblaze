@@ -23,7 +23,10 @@ class ContentScript {
   private currentElement: HTMLElement | null = null;
   private lastTypedText = '';
   private expansionInProgress = false;
-  private debouncedCheckExpansion: () => void;
+  private debouncedCheckExpansion: {
+    (): void;
+    cancel(): void;
+  };
 
   constructor() {
     log('debug', 'ContentScript constructor called');
@@ -180,6 +183,9 @@ class ContentScript {
 
   private handleInput(event: Event): void {
     if (!this.isEnabled || this.expansionInProgress) {
+      if (this.expansionInProgress) {
+        log('trace', 'Input event ignored - expansion in progress');
+      }
       return;
     }
 
@@ -318,7 +324,11 @@ class ContentScript {
     }
 
     if (this.expansionInProgress) {
-      log('trace', 'Expansion already in progress - skipping check');
+      log('trace', 'Expansion already in progress - skipping check', {
+        timestamp: Date.now(),
+        currentElement: this.currentElement?.tagName,
+        lastTypedText: this.lastTypedText.slice(-20)
+      });
       return;
     }
 
@@ -478,7 +488,11 @@ class ContentScript {
       return;
     }
 
-    log('debug', 'Setting expansion in progress flag');
+    log('debug', 'Setting expansion in progress flag', {
+      timestamp: Date.now(),
+      shortcut,
+      snippetName: snippet.name
+    });
     this.expansionInProgress = true;
 
     try {
@@ -510,6 +524,16 @@ class ContentScript {
         await this.performTextReplacement(snippet, context, shortcut);
       }
 
+      // Clear expansion flag early after UI updates are complete
+      log('debug', 'Text replacement/cursor update done, clearing flag early', {
+        timestamp: Date.now(),
+        shortcut,
+        snippetName: snippet.name
+      });
+      this.expansionInProgress = false;
+      this.debouncedCheckExpansion.cancel();
+      log('trace', 'Expansion flag cleared and pending checks cancelled');
+
       log('trace', 'Notifying background script of expansion');
       // Notify background script of expansion
       await this.browser.runtime.sendMessage({
@@ -527,8 +551,12 @@ class ContentScript {
         shortcut
       });
     } finally {
-      log('debug', 'Clearing expansion in progress flag');
-      this.expansionInProgress = false;
+      // Safety net - ensure flag is cleared even if early clearing failed
+      if (this.expansionInProgress) {
+        log('warn', 'Expansion flag still set in finally block, clearing now');
+        this.expansionInProgress = false;
+        this.debouncedCheckExpansion.cancel();
+      }
       log('info', `Snippet expansion completed: "${shortcut}"`);
     }
   }
