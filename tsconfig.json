@@ -14,7 +14,6 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "noEmit": false,
-    "jsx": "react-jsx",
     "types": ["chrome", "node", "jest"]
   },
   "include": [
