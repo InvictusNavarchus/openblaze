@@ -27,29 +27,23 @@ class ContentScript {
 
   constructor() {
     log('debug', 'ContentScript constructor called');
-    log('trace', 'Creating debounced expansion checker with 100ms delay');
     this.debouncedCheckExpansion = debounce(() => this.checkForExpansion(), 100);
-    log('debug', 'Starting initialization process');
     this.initialize();
-    log('trace', 'ContentScript constructor completed');
+    log('debug', 'ContentScript constructor completed');
   }
 
   private async initialize(): Promise<void> {
     log('debug', 'Starting content script initialization');
     try {
-      log('trace', 'Loading settings from background script');
       await this.loadSettings();
       log('debug', 'Settings loaded successfully');
 
-      log('trace', 'Setting up DOM event listeners');
       this.setupEventListeners();
       log('debug', 'Event listeners setup completed');
 
-      log('trace', 'Setting up message listener for background communication');
       this.setupMessageListener();
       log('debug', 'Message listener setup completed');
 
-      log('trace', 'Setting up keyboard shortcuts');
       this.setupKeyboardShortcuts();
       log('debug', 'Keyboard shortcuts setup completed');
 
@@ -57,18 +51,16 @@ class ContentScript {
       log('debug', `Current state - isEnabled: ${this.isEnabled}, settings loaded: ${!!this.settings}`);
     } catch (error) {
       log('error', 'Failed to initialize content script:', error);
-      log('trace', 'Error details:', { error, stack: error instanceof Error ? error.stack : 'No stack trace' });
+      log('debug', 'Error details:', { error, stack: error instanceof Error ? error.stack : 'No stack trace' });
     }
   }
 
   private async loadSettings(): Promise<void> {
     log('debug', 'Loading settings from background script');
     try {
-      log('trace', 'Sending getSettings message to background script');
       const response = await this.browser.runtime.sendMessage({
         type: 'getSettings'
       });
-      log('trace', 'Received settings response:', response);
 
       this.settings = response.settings;
       this.isEnabled = this.settings?.isEnabled ?? true;
@@ -83,46 +75,26 @@ class ContentScript {
       log('error', 'Failed to load settings:', error);
       log('warn', 'Falling back to default settings - extension will be enabled');
       this.isEnabled = true; // Default to enabled
-      log('trace', 'Default settings applied:', { isEnabled: this.isEnabled });
     }
   }
 
   private setupEventListeners(): void {
     log('debug', 'Setting up DOM event listeners');
 
-    log('trace', 'Adding input event listener with capture=true');
     document.addEventListener('input', this.handleInput.bind(this), true);
-
-    log('trace', 'Adding keydown event listener with capture=true');
     document.addEventListener('keydown', this.handleKeyDown.bind(this), true);
-
-    log('trace', 'Adding keyup event listener with capture=true');
     document.addEventListener('keyup', this.handleKeyUp.bind(this), true);
-
-    log('trace', 'Adding focus event listener with capture=true');
     document.addEventListener('focus', this.handleFocus.bind(this), true);
-
-    log('trace', 'Adding blur event listener with capture=true');
     document.addEventListener('blur', this.handleBlur.bind(this), true);
 
     log('debug', 'All DOM event listeners added successfully');
 
     // Listen for dynamic content changes
-    log('trace', 'Creating MutationObserver for dynamic content changes');
     const observer = new MutationObserver((mutations) => {
-      log('trace', `MutationObserver triggered with ${mutations.length} mutations`);
-      mutations.forEach((mutation, index) => {
-        log('trace', `Mutation ${index + 1}:`, {
-          type: mutation.type,
-          target: mutation.target.nodeName,
-          addedNodes: mutation.addedNodes.length,
-          removedNodes: mutation.removedNodes.length
-        });
-      });
+      log('debug', `MutationObserver triggered with ${mutations.length} mutations`);
       this.debouncedCheckExpansion();
     });
 
-    log('trace', 'Starting MutationObserver on document.body');
     observer.observe(document.body, {
       childList: true,
       subtree: true
@@ -134,29 +106,23 @@ class ContentScript {
     log('debug', 'Setting up runtime message listener');
     this.browser.runtime.onMessage.addListener(
       (message: Message, sender, sendResponse) => {
-        log('trace', 'Received runtime message:', {
+        log('debug', 'Received runtime message:', {
           type: message.type,
-          data: message.data,
           senderId: sender.id,
-          senderUrl: sender.url,
           senderTab: sender.tab?.id
         });
         this.handleMessage(message, sendResponse);
         return true; // Keep message channel open for async response
       }
     );
-    log('debug', 'Runtime message listener setup completed');
   }
 
   private setupKeyboardShortcuts(): void {
     log('debug', 'Setting up keyboard shortcuts');
 
-    log('trace', 'Initializing keyboard shortcuts system');
     initializeKeyboardShortcuts();
-    log('debug', 'Keyboard shortcuts system initialized');
 
     // Register content script specific shortcuts
-    log('trace', 'Registering toggle expansion shortcut (Ctrl+Shift+E)');
     registerShortcut({
       id: 'toggle-expansion-content',
       keys: ['ctrl', 'shift', 'e'],
@@ -167,9 +133,7 @@ class ContentScript {
       },
       enabled: true
     });
-    log('debug', 'Toggle expansion shortcut registered');
 
-    log('trace', 'Registering snippet picker shortcut (Ctrl+Shift+Space)');
     registerShortcut({
       id: 'snippet-picker-content',
       keys: ['ctrl', 'shift', 'space'],
@@ -180,8 +144,7 @@ class ContentScript {
       },
       enabled: true
     });
-    log('debug', 'Snippet picker shortcut registered');
-    log('info', 'All keyboard shortcuts setup completed');
+    log('debug', 'Keyboard shortcuts setup completed');
   }
 
   private handleMessage(
@@ -189,81 +152,48 @@ class ContentScript {
     sendResponse: (response?: any) => void
   ): void {
     log('debug', `Handling message of type: ${message.type}`);
-    log('trace', 'Message details:', message);
 
     switch (message.type) {
       case 'toggleExpansion':
         log('info', `Toggle expansion requested - new state: ${message.data.enabled}`);
         this.isEnabled = message.data.enabled;
-        log('debug', `Expansion state updated to: ${this.isEnabled}`);
         sendResponse({ success: true });
-        log('trace', 'Toggle expansion response sent');
         break;
 
       case 'showSnippetPicker':
         log('info', 'Show snippet picker requested');
-        log('trace', 'Snippet picker data:', message.data);
         this.showSnippetPicker(message.data);
         sendResponse({ success: true });
-        log('trace', 'Show snippet picker response sent');
         break;
 
       case 'insertSnippet':
         log('info', `Insert snippet requested: ${message.data.snippet?.shortcut || 'unknown'}`);
-        log('trace', 'Insert snippet data:', {
-          snippet: message.data.snippet,
-          variables: message.data.variables
-        });
         this.insertSnippet(message.data.snippet, message.data.variables);
         sendResponse({ success: true });
-        log('trace', 'Insert snippet response sent');
         break;
 
       default:
         log('warn', `Unknown message type received: ${message.type}`);
-        log('trace', 'Unknown message details:', message);
         sendResponse({ error: 'Unknown message type' });
-        log('trace', 'Error response sent for unknown message type');
     }
   }
 
   private handleInput(event: Event): void {
-    log('trace', 'Input event triggered');
-
-    if (!this.isEnabled) {
-      log('trace', 'Input ignored - expansion disabled');
-      return;
-    }
-
-    if (this.expansionInProgress) {
-      log('trace', 'Input ignored - expansion in progress');
+    if (!this.isEnabled || this.expansionInProgress) {
       return;
     }
 
     const target = event.target as HTMLElement;
-    log('trace', 'Input target:', {
-      tagName: target.tagName,
-      type: (target as HTMLInputElement).type,
-      id: target.id,
-      className: target.className
-    });
 
     if (!isEditableElement(target)) {
-      log('trace', 'Input ignored - target is not editable');
       return;
     }
 
-    log('debug', 'Processing input on editable element');
+    log('debug', 'Processing input on editable element:', target.tagName);
     this.currentElement = target;
     this.lastTypedText = getElementText(target);
 
-    log('trace', 'Current text state:', {
-      textLength: this.lastTypedText.length,
-      textPreview: this.lastTypedText.slice(-20) // Last 20 characters
-    });
-
     // Check for expansion after a short delay
-    log('trace', 'Scheduling expansion check');
     this.debouncedCheckExpansion();
   }
 

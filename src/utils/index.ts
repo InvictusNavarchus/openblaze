@@ -181,7 +181,7 @@ export function log(level: 'trace' | 'debug' | 'info' | 'warn' | 'error', messag
 
   switch (level) {
     case 'trace':
-      console.trace(formattedPrefix, message, ...args);
+      console.debug(formattedPrefix, message, ...args);
       break;
     case 'debug':
       console.debug(formattedPrefix, message, ...args);
