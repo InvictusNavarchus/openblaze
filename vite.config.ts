@@ -7,43 +7,63 @@ function contentScriptPlugin() {
   return {
     name: 'content-script-bundler',
     async writeBundle() {
-      // Import rollup dynamically to build content scripts separately
-      const { rollup } = await import('rollup');
+      try {
+        // Ensure the output directory exists
+        const outputDir = resolve(__dirname, 'dist/js');
+        if (!existsSync(outputDir)) {
+          mkdirSync(outputDir, { recursive: true });
+          console.log(`Created output directory: ${outputDir}`);
+        }
 
-      const contentScripts = [
-        { name: 'contentScript', input: resolve(__dirname, 'src/content/contentScript.ts') },
-        { name: 'inPageNotifier', input: resolve(__dirname, 'src/content/inPageNotifier.ts') }
-      ];
+        // Import rollup dynamically to build content scripts separately
+        const { rollup } = await import('rollup');
 
-      for (const script of contentScripts) {
-        const bundle = await rollup({
-          input: script.input,
-          external: [], // Don't externalize anything
-          plugins: [
-            // Add TypeScript support
-            (await import('@rollup/plugin-typescript')).default({
-              tsconfig: resolve(__dirname, 'tsconfig.json'),
-              declaration: false,
-              declarationMap: false,
-              compilerOptions: {
-                allowImportingTsExtensions: false,
-              },
-            }),
-            // Add node resolution
-            (await import('@rollup/plugin-node-resolve')).default({
-              browser: true,
-              preferBuiltins: false,
-            }),
-          ],
-        });
+        const contentScripts = [
+          { name: 'contentScript', input: resolve(__dirname, 'src/content/contentScript.ts') },
+          { name: 'inPageNotifier', input: resolve(__dirname, 'src/content/inPageNotifier.ts') }
+        ];
 
-        await bundle.write({
-          file: `dist/js/${script.name}.js`,
-          format: 'iife',
-          inlineDynamicImports: true,
-        });
+        for (const script of contentScripts) {
+          try {
+            console.log(`Building content script: ${script.name}`);
 
-        await bundle.close();
+            const bundle = await rollup({
+              input: script.input,
+              external: [], // Don't externalize anything
+              plugins: [
+                // Add TypeScript support
+                (await import('@rollup/plugin-typescript')).default({
+                  tsconfig: resolve(__dirname, 'tsconfig.json'),
+                  declaration: false,
+                  declarationMap: false,
+                  compilerOptions: {
+                    allowImportingTsExtensions: false,
+                  },
+                }),
+                // Add node resolution
+                (await import('@rollup/plugin-node-resolve')).default({
+                  browser: true,
+                  preferBuiltins: false,
+                }),
+              ],
+            });
+
+            await bundle.write({
+              file: `dist/js/${script.name}.js`,
+              format: 'iife',
+              inlineDynamicImports: true,
+            });
+
+            await bundle.close();
+            console.log(`Successfully built: ${script.name}.js`);
+          } catch (scriptError) {
+            console.error(`Failed to build content script '${script.name}':`, scriptError);
+            throw scriptError; // Re-throw to fail the build process
+          }
+        }
+      } catch (error) {
+        console.error('Content script bundling failed:', error);
+        throw error; // Re-throw to fail the build process
       }
     }
   };
