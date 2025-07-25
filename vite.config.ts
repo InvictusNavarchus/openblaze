@@ -2,6 +2,53 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { copyFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
 
+// Custom plugin to build content scripts as self-contained bundles
+function contentScriptPlugin() {
+  return {
+    name: 'content-script-bundler',
+    async writeBundle() {
+      // Import rollup dynamically to build content scripts separately
+      const { rollup } = await import('rollup');
+
+      const contentScripts = [
+        { name: 'contentScript', input: resolve(__dirname, 'src/content/contentScript.ts') },
+        { name: 'inPageNotifier', input: resolve(__dirname, 'src/content/inPageNotifier.ts') }
+      ];
+
+      for (const script of contentScripts) {
+        const bundle = await rollup({
+          input: script.input,
+          external: [], // Don't externalize anything
+          plugins: [
+            // Add TypeScript support
+            (await import('@rollup/plugin-typescript')).default({
+              tsconfig: resolve(__dirname, 'tsconfig.json'),
+              declaration: false,
+              declarationMap: false,
+              compilerOptions: {
+                allowImportingTsExtensions: false,
+              },
+            }),
+            // Add node resolution
+            (await import('@rollup/plugin-node-resolve')).default({
+              browser: true,
+              preferBuiltins: false,
+            }),
+          ],
+        });
+
+        await bundle.write({
+          file: `dist/js/${script.name}.js`,
+          format: 'iife',
+          inlineDynamicImports: true,
+        });
+
+        await bundle.close();
+      }
+    }
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const isProduction = mode === 'production';
 
@@ -66,7 +113,9 @@ export default defineConfig(({ mode }) => {
             findAndCopyCss('src');
           }
         }
-      }
+      },
+      // Add the content script plugin
+      contentScriptPlugin()
     ],
     resolve: {
       alias: {
@@ -77,13 +126,14 @@ export default defineConfig(({ mode }) => {
       target: 'baseline-widely-available', // Vite 7 default
       outDir: 'dist',
       emptyOutDir: true,
-      sourcemap: !isProduction ? 'cheap-module-source-map' : false,
+      sourcemap: !isProduction ? 'inline' : false,
       minify: isProduction,
       rollupOptions: {
         input: {
           background: resolve(__dirname, 'src/background/background.ts'),
-          contentScript: resolve(__dirname, 'src/content/contentScript.ts'),
-          inPageNotifier: resolve(__dirname, 'src/content/inPageNotifier.ts'),
+          // Remove content scripts from main build - they'll be built separately
+          // contentScript: resolve(__dirname, 'src/content/contentScript.ts'),
+          // inPageNotifier: resolve(__dirname, 'src/content/inPageNotifier.ts'),
           popup: resolve(__dirname, 'src/popup/popup.ts'),
           options: resolve(__dirname, 'src/options/options.ts'),
           sandbox: resolve(__dirname, 'src/sandbox/sandbox.ts'),
@@ -93,7 +143,7 @@ export default defineConfig(({ mode }) => {
           entryFileNames: 'js/[name].js',
           chunkFileNames: 'js/[name]-[hash].js',
           assetFileNames: (assetInfo) => {
-            const name = assetInfo.name || '';
+            const name = assetInfo.names?.[0] || '';
             if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(name)) {
               return `images/[name][extname]`;
             }
@@ -102,6 +152,18 @@ export default defineConfig(({ mode }) => {
             }
             return `assets/[name]-[hash][extname]`;
           },
+          // Force content scripts to be self-contained by preventing chunk creation
+          manualChunks: (id) => {
+            // Check if this module is imported by content scripts
+            if (id.includes('src/utils/') || id.includes('src/types/')) {
+              // Don't create chunks for utility modules - inline them
+              return undefined;
+            }
+            // Allow other modules to be chunked normally
+            return undefined;
+          },
+          // Set a very high minimum chunk size to force inlining
+          experimentalMinChunkSize: 100000,
         },
       },
     },
