@@ -1,6 +1,7 @@
 const path = require('path');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+// MiniCssExtractPlugin removed - no CSS files are imported in JS/TS
+// CSS files are handled by CopyWebpackPlugin instead
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = (env, argv) => {
@@ -28,10 +29,7 @@ module.exports = (env, argv) => {
           use: 'ts-loader',
           exclude: /node_modules/
         },
-        {
-          test: /\.css$/,
-          use: [MiniCssExtractPlugin.loader, 'css-loader']
-        },
+        // CSS rule removed - CSS files are copied directly, not processed through JS imports
         {
           test: /\.(png|jpg|jpeg|gif|svg)$/,
           type: 'asset/resource',
@@ -48,9 +46,7 @@ module.exports = (env, argv) => {
       }
     },
     plugins: [
-      new MiniCssExtractPlugin({
-        filename: 'css/[name].css'
-      }),
+      // MiniCssExtractPlugin removed - CSS files are copied directly by CopyWebpackPlugin
       new CopyWebpackPlugin({
         patterns: [
           {
