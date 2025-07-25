@@ -20,14 +20,15 @@ sizes.forEach(size => {
   
   // Create a simple colored square as placeholder
   const canvas = createSimpleIcon(size);
-  fs.writeFileSync(filepath, canvas, 'base64');
+  fs.writeFileSync(filepath, canvas);
   
   console.log(`Generated ${filename}`);
 });
 
 function createSimpleIcon(size) {
-  // This is a very basic approach - in a real project you'd use a proper image library
-  // For now, we'll just copy the transparent PNG
+  // This function currently returns a fixed 1x1 transparent PNG regardless of size
+  // For proper implementation, use an image library like sharp or canvas to generate
+  // colored square PNGs of the requested dimensions
   return Buffer.from(transparentPng, 'base64');
 }
 
