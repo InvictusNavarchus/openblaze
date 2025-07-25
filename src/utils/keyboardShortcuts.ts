@@ -15,6 +15,18 @@ export class KeyboardShortcutManager {
   private pressedKeys: Set<string> = new Set();
   private isListening = false;
 
+  // Store bound event handlers for proper cleanup
+  private boundHandleKeyDown: (event: KeyboardEvent) => void;
+  private boundHandleKeyUp: (event: KeyboardEvent) => void;
+  private boundHandleBlur: () => void;
+
+  constructor() {
+    // Bind event handlers once in constructor
+    this.boundHandleKeyDown = this.handleKeyDown.bind(this);
+    this.boundHandleKeyUp = this.handleKeyUp.bind(this);
+    this.boundHandleBlur = this.handleBlur.bind(this);
+  }
+
   static getInstance(): KeyboardShortcutManager {
     if (!KeyboardShortcutManager.instance) {
       KeyboardShortcutManager.instance = new KeyboardShortcutManager();
@@ -28,12 +40,29 @@ export class KeyboardShortcutManager {
   initialize(): void {
     if (this.isListening) return;
 
-    document.addEventListener('keydown', this.handleKeyDown.bind(this));
-    document.addEventListener('keyup', this.handleKeyUp.bind(this));
-    document.addEventListener('blur', this.handleBlur.bind(this));
-    
+    document.addEventListener('keydown', this.boundHandleKeyDown);
+    document.addEventListener('keyup', this.boundHandleKeyUp);
+    document.addEventListener('blur', this.boundHandleBlur);
+
     this.isListening = true;
     log('info', 'Keyboard shortcut manager initialized');
+  }
+
+  /**
+   * Cleanup keyboard shortcut listeners and reset state
+   */
+  destroy(): void {
+    if (!this.isListening) return;
+
+    document.removeEventListener('keydown', this.boundHandleKeyDown);
+    document.removeEventListener('keyup', this.boundHandleKeyUp);
+    document.removeEventListener('blur', this.boundHandleBlur);
+
+    this.isListening = false;
+    this.pressedKeys.clear();
+    this.shortcuts.clear();
+
+    log('info', 'Keyboard shortcut manager destroyed');
   }
 
   /**
@@ -129,12 +158,12 @@ export class KeyboardShortcutManager {
    */
   private normalizeKey(event: KeyboardEvent): string {
     const key = event.key.toLowerCase();
-    
-    // Handle modifier keys
-    if (event.ctrlKey && key !== 'control') return 'ctrl';
-    if (event.altKey && key !== 'alt') return 'alt';
-    if (event.shiftKey && key !== 'shift') return 'shift';
-    if (event.metaKey && key !== 'meta') return 'meta';
+
+    // Handle modifier keys - only return modifier name when the pressed key itself is the modifier
+    if (key === 'control') return 'ctrl';
+    if (key === 'alt') return 'alt';
+    if (key === 'shift') return 'shift';
+    if (key === 'meta') return 'meta';
     
     // Handle special keys
     const keyMap: Record<string, string> = {
