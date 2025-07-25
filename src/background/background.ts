@@ -37,10 +37,7 @@ class BackgroundService {
       }
     );
 
-    // Handle extension icon click
-    this.browser.action.onClicked.addListener((tab) => {
-      this.handleActionClick(tab);
-    });
+    // Extension icon click is handled by default_popup in manifest
 
     // Handle context menu
     this.browser.contextMenus.onClicked.addListener((info, tab) => {
@@ -212,10 +209,7 @@ class BackgroundService {
     }
   }
 
-  private async handleActionClick(tab: chrome.tabs.Tab): Promise<void> {
-    // Open popup or perform default action
-    log('info', 'Extension icon clicked');
-  }
+
 
   private async handleContextMenuClick(
     info: chrome.contextMenus.OnClickData, 
