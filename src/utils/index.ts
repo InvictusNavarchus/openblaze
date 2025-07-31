@@ -144,7 +144,7 @@ export function isExcludedDomain(url: string, excludedDomains: string[]): boolea
 
 // Element utilities
 export function isEditableElement(element: Element): boolean {
-  if (!element) return false;
+  if (!element || !element.tagName) return false;
   
   const tagName = element.tagName.toLowerCase();
   
@@ -164,8 +164,12 @@ export function isEditableElement(element: Element): boolean {
 }
 
 export function getElementText(element: HTMLElement): string {
-  if (element.tagName.toLowerCase() === 'input' || element.tagName.toLowerCase() === 'textarea') {
-    return (element as HTMLInputElement | HTMLTextAreaElement).value;
+  if (!element || !element.tagName) return '';
+  
+  const tagName = element.tagName.toLowerCase();
+  
+  if (tagName === 'input' || tagName === 'textarea') {
+    return (element as HTMLInputElement | HTMLTextAreaElement).value || '';
   }
   
   if (element.getAttribute('contenteditable') === 'true') {
@@ -176,7 +180,11 @@ export function getElementText(element: HTMLElement): string {
 }
 
 export function setElementText(element: HTMLElement, text: string): void {
-  if (element.tagName.toLowerCase() === 'input' || element.tagName.toLowerCase() === 'textarea') {
+  if (!element || !element.tagName) return;
+  
+  const tagName = element.tagName.toLowerCase();
+  
+  if (tagName === 'input' || tagName === 'textarea') {
     (element as HTMLInputElement | HTMLTextAreaElement).value = text;
     // Trigger input event
     element.dispatchEvent(new Event('input', { bubbles: true }));
