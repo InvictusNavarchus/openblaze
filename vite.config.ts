@@ -40,8 +40,10 @@ function contentScriptPlugin(outDir: string) {
                   tsconfig: resolve(__dirname, 'tsconfig.json'),
                   declaration: false,
                   declarationMap: false,
+                  outDir: undefined, // Let rollup handle the output
                   compilerOptions: {
                     allowImportingTsExtensions: false,
+                    outDir: undefined, // Override tsconfig outDir
                   },
                 }),
                 // Add node resolution
