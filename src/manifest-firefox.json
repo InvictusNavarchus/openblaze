@@ -3,7 +3,6 @@
   "name": "OpenBlaze: Text Expansion & Snippets",
   "description": "Open source text expansion tool. Create smart text snippets to boost productivity and save keystrokes!",
   "version": "0.1.0",
-  "minimum_chrome_version": "88",
   "permissions": [
     "tabs",
     "storage",
@@ -20,7 +19,7 @@
   "icons": {
   },
   "background": {
-    "service_worker": "js/background.js",
+    "scripts": ["js/background.js"],
     "type": "module"
   },
   "action": {
@@ -75,6 +74,6 @@
   },
   "options_page": "options.html",
   "content_security_policy": {
-    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';"
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self'; child-src 'self';"
   }
 }
