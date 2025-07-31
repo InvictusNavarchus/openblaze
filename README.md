@@ -42,12 +42,25 @@ OpenBlaze is a powerful, open-source Chrome extension for text expansion and sni
 
 3. **Build the extension**
    ```bash
+   # Build for both browsers
    pnpm run build
+   
+   # Or build for specific browser
+   pnpm run build:chrome
+   pnpm run build:firefox
    ```
 
 4. **Load in Chrome**
    - Open Chrome and go to `chrome://extensions/`
    - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the `dist-chrome` folder
+
+5. **Load in Firefox**
+   - Open Firefox and go to `about:debugging`
+   - Click "This Firefox"
+   - Click "Load Temporary Add-on"
+   - Select the `manifest.json` file in the `dist-firefox` folder
    - Click "Load unpacked" and select the `dist` folder
 
 ### From Chrome Web Store
@@ -135,22 +148,44 @@ src/
 
 The project uses **Vite 7** as the build tool, providing fast builds and excellent development experience.
 
+OpenBlaze supports both **Chrome** and **Firefox** with separate builds:
+
 ```bash
-# Development build with watch mode
-pnpm run dev
-
-# Development build (single run)
-pnpm run build:dev
-
-# Production build
+# Build for both browsers
 pnpm run build
 
-# Type checking
-pnpm run type-check
+# Build for Chrome only
+pnpm run build:chrome
 
-# Linting
+# Build for Firefox only  
+pnpm run build:firefox
+
+# Development builds with source maps
+pnpm run build:dev              # Both browsers
+pnpm run build:chrome:dev       # Chrome only
+pnpm run build:firefox:dev      # Firefox only
+
+# Development with watch mode
+pnpm run dev                    # Chrome (default)
+pnpm run dev:chrome            # Chrome with watch
+pnpm run dev:firefox           # Firefox with watch
+
+# Create extension packages
+pnpm run zip                   # Both browsers
+pnpm run zip:chrome           # Chrome extension
+pnpm run zip:firefox          # Firefox extension
+
+# Type checking and linting
+pnpm run type-check
 pnpm run lint
 ```
+
+#### Browser-Specific Builds
+
+- **Chrome**: Uses `service_worker` in manifest, outputs to `dist-chrome/`
+- **Firefox**: Uses `scripts` array in manifest, outputs to `dist-firefox/`
+- Both builds are **Manifest V3** compatible
+- Separate zip files: `openblaze-chrome-extension.zip` and `openblaze-firefox-extension.zip`
 
 #### Build System Features
 
