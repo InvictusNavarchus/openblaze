@@ -1,0 +1,79 @@
+{
+  "manifest_version": 3,
+  "name": "OpenBlaze: Text Expansion & Snippets",
+  "description": "Open source text expansion tool. Create smart text snippets to boost productivity and save keystrokes!",
+  "version": "0.1.0",
+  "permissions": [
+    "tabs",
+    "storage",
+    "unlimitedStorage",
+    "clipboardRead",
+    "clipboardWrite",
+    "contextMenus",
+    "offscreen",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "icons": {
+  },
+  "background": {
+    "scripts": ["js/background.js"],
+    "type": "module"
+  },
+  "action": {
+    "default_icon": {
+    },
+    "default_title": "OpenBlaze",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "js/inPageNotifier.js",
+        "js/contentScript.js"
+      ],
+      "match_origin_as_fallback": true,
+      "match_about_blank": true,
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "sandbox": {
+    "pages": [
+      "sandbox.html"
+    ]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "images/*",
+        "css/*"
+      ],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true
+    }
+  ],
+  "omnibox": {
+    "keyword": "ob"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Space"
+      }
+    },
+    "toggle_expansion": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E"
+      },
+      "description": "Toggle text expansion on/off"
+    }
+  },
+  "options_page": "options.html",
+  "content_security_policy": {
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';"
+  }
+}
