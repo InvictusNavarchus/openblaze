@@ -244,18 +244,25 @@ class ContentScript {
 
   private handleFocus(event: Event): void {
     const target = event.target as HTMLElement;
+    
+    // Add null checks to prevent undefined errors
+    if (!target) {
+      log('trace', 'Focus event - no target element');
+      return;
+    }
+    
     log('trace', 'Focus event on:', {
-      tagName: target.tagName,
-      type: (target as HTMLInputElement).type,
-      id: target.id,
-      className: target.className
+      tagName: target.tagName || 'undefined',
+      type: (target as HTMLInputElement).type || 'undefined',
+      id: target.id || 'undefined',
+      className: target.className || 'undefined'
     });
 
     if (isEditableElement(target)) {
       log('debug', 'Focus on editable element - setting as current element');
       this.currentElement = target;
       log('trace', 'Current element updated:', {
-        tagName: target.tagName,
+        tagName: target.tagName || 'undefined',
         hasValue: !!(target as HTMLInputElement).value,
         hasTextContent: !!target.textContent
       });
@@ -266,9 +273,16 @@ class ContentScript {
 
   private handleBlur(event: Event): void {
     const target = event.target as HTMLElement;
+    
+    // Add null checks to prevent undefined errors
+    if (!target) {
+      log('trace', 'Blur event - no target element');
+      return;
+    }
+    
     log('trace', 'Blur event on:', {
-      tagName: target.tagName,
-      id: target.id,
+      tagName: target.tagName || 'undefined',
+      id: target.id || 'undefined',
       isCurrentElement: target === this.currentElement
     });
 
@@ -381,7 +395,19 @@ class ContentScript {
   }
 
   private getTextInputInfo(element: HTMLElement): TextInputInfo {
-    log('trace', 'Getting text input info for element:', element.tagName);
+    log('trace', 'Getting text input info for element:', element?.tagName || 'undefined');
+
+    if (!element || !element.tagName) {
+      log('warn', 'getTextInputInfo called with invalid element');
+      return {
+        element: element,
+        type: 'other',
+        value: '',
+        selectionStart: 0,
+        selectionEnd: 0,
+        isSupported: false
+      };
+    }
 
     const tagName = element.tagName.toLowerCase();
     let type: TextInputInfo['type'] = 'other';
@@ -535,10 +561,20 @@ class ContentScript {
       log('trace', 'Expansion flag cleared and pending checks cancelled');
 
       log('trace', 'Notifying background script of expansion');
-      // Notify background script of expansion
+      // Notify background script of expansion - serialize context to avoid DOM element cloning issues
+      const serializableContext = {
+        elementTag: context.element.tagName,
+        elementId: context.element.id,
+        elementClass: context.element.className,
+        text: context.text,
+        cursorPosition: context.cursorPosition,
+        shortcut: context.shortcut,
+        variables: context.variables
+      };
+      
       await this.browser.runtime.sendMessage({
         type: 'expandSnippet',
-        data: { snippet, context }
+        data: { snippet, context: serializableContext }
       });
       log('debug', 'Background script notified successfully');
 
@@ -640,6 +676,11 @@ class ContentScript {
   private setCursorPosition(element: HTMLElement, position: number): void {
     log('debug', `Setting cursor position to: ${position}`);
 
+    if (!element || !element.tagName) {
+      log('warn', 'setCursorPosition called with invalid element');
+      return;
+    }
+
     const tagName = element.tagName.toLowerCase();
     log('trace', 'Cursor positioning for element:', {
       tagName,
@@ -651,39 +692,88 @@ class ContentScript {
     if (tagName === 'input' || tagName === 'textarea') {
       const input = element as HTMLInputElement | HTMLTextAreaElement;
       log('trace', 'Setting selection range for input/textarea');
-      input.setSelectionRange(position, position);
-      input.focus();
-      log('debug', 'Cursor position set successfully for input/textarea');
+      try {
+        input.setSelectionRange(position, position);
+        input.focus();
+        log('debug', 'Cursor position set successfully for input/textarea');
+      } catch (error) {
+        log('warn', 'Failed to set cursor position for input/textarea:', error);
+      }
     } else if (element.getAttribute('contenteditable') === 'true') {
       log('trace', 'Setting cursor position for contenteditable element');
       // For contenteditable elements, cursor positioning is more complex
       try {
         const range = document.createRange();
         const selection = window.getSelection();
-        const maxPosition = element.textContent?.length || 0;
-        const safePosition = Math.min(position, maxPosition);
+        
+        // Get the actual current text content length after the text has been updated
+        const currentTextLength = element.textContent?.length || 0;
+        const safePosition = Math.min(position, currentTextLength);
 
         log('trace', 'Contenteditable cursor details:', {
           requestedPosition: position,
-          maxPosition,
+          currentTextLength,
           safePosition,
-          hasFirstChild: !!element.firstChild
+          hasTextContent: !!element.textContent,
+          hasChildNodes: element.childNodes.length > 0
         });
 
-        if (element.firstChild) {
-          range.setStart(element.firstChild, safePosition);
+        // Try to find a text node to position the cursor
+        let targetNode = null;
+        let targetOffset = safePosition;
+
+        if (element.childNodes.length > 0) {
+          // Walk through child nodes to find the right text node
+          let currentOffset = 0;
+          for (let i = 0; i < element.childNodes.length; i++) {
+            const child = element.childNodes[i];
+            if (child.nodeType === Node.TEXT_NODE) {
+              const textLength = child.textContent?.length || 0;
+              if (currentOffset + textLength >= safePosition) {
+                targetNode = child;
+                targetOffset = safePosition - currentOffset;
+                break;
+              }
+              currentOffset += textLength;
+            } else if (child.nodeType === Node.ELEMENT_NODE) {
+              const textLength = child.textContent?.length || 0;
+              if (currentOffset + textLength >= safePosition) {
+                // For complex elements, just position at the start of this element
+                targetNode = child.firstChild || child;
+                targetOffset = 0;
+                break;
+              }
+              currentOffset += textLength;
+            }
+          }
+        }
+
+        if (targetNode && selection) {
+          range.setStart(targetNode, Math.min(targetOffset, targetNode.textContent?.length || 0));
           range.collapse(true);
-          selection?.removeAllRanges();
-          selection?.addRange(range);
+          selection.removeAllRanges();
+          selection.addRange(range);
           log('debug', 'Cursor position set successfully for contenteditable');
         } else {
-          log('warn', 'No first child found in contenteditable element');
+          // Fallback: place cursor at the end
+          log('debug', 'Using fallback positioning - placing cursor at end of element');
+          range.selectNodeContents(element);
+          range.collapse(false);
+          selection?.removeAllRanges();
+          selection?.addRange(range);
         }
 
         element.focus();
       } catch (error) {
         log('warn', 'Failed to set cursor position in contenteditable:', error);
         log('trace', 'Cursor positioning error details:', { error, position, element: element.tagName });
+        
+        // Final fallback - just focus the element
+        try {
+          element.focus();
+        } catch (focusError) {
+          log('warn', 'Failed to focus element:', focusError);
+        }
       }
     } else {
       log('warn', 'Unsupported element type for cursor positioning:', tagName);
@@ -938,11 +1028,21 @@ class ContentScript {
     this.setCursorPosition(element, newCursorPosition);
 
     log('trace', 'Notifying background script of direct insertion');
-    // Notify background script
+    // Notify background script - serialize context to avoid DOM element cloning issues
     try {
+      const serializableContext = {
+        elementTag: context.element.tagName,
+        elementId: context.element.id,
+        elementClass: context.element.className,
+        text: context.text,
+        cursorPosition: context.cursorPosition,
+        shortcut: context.shortcut,
+        variables: context.variables
+      };
+      
       await this.browser.runtime.sendMessage({
         type: 'expandSnippet',
-        data: { snippet, context }
+        data: { snippet, context: serializableContext }
       });
       log('debug', 'Background script notified successfully');
     } catch (error) {
