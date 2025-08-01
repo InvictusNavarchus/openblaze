@@ -15,6 +15,7 @@ import {
 } from '../utils';
 import { getFormContext } from '../utils/formHandler';
 import { initializeKeyboardShortcuts, registerShortcut } from '../utils/keyboardShortcuts';
+import { performSmartTextInsertion } from '../utils/clipboard';
 
 class ContentScript {
   private browser = getBrowser();
@@ -293,6 +294,151 @@ class ContentScript {
     }
   }
 
+  /**
+   * Determine if an element has complex DOM structure that requires smart insertion
+   * This detects elements where direct text manipulation might not work properly
+   */
+  private hasComplexDOMStructure(element: HTMLElement): boolean {
+    log('trace', 'Analyzing DOM structure complexity');
+
+    // Check if it's a contenteditable element
+    if (element.getAttribute('contenteditable') === 'true') {
+      log('trace', 'Contenteditable element detected - checking internal structure');
+      
+      // Look for complex internal structure
+      const hasComplexChildren = this.hasComplexChildStructure(element);
+      
+      if (hasComplexChildren) {
+        log('debug', 'Complex contenteditable structure detected - will use smart insertion');
+        return true;
+      }
+    }
+
+    // Check if element has rich text editor characteristics
+    if (this.isRichTextEditor(element)) {
+      log('debug', 'Rich text editor detected - will use smart insertion');
+      return true;
+    }
+
+    // Check for framework-specific patterns (React, Vue, etc.)
+    if (this.hasFrameworkSpecificPatterns(element)) {
+      log('debug', 'Framework-specific patterns detected - will use smart insertion');
+      return true;
+    }
+
+    log('trace', 'Simple DOM structure detected - will use direct text manipulation');
+    return false;
+  }
+
+  /**
+   * Check if element has complex child structure with multiple text nodes
+   */
+  private hasComplexChildStructure(element: HTMLElement): boolean {
+    const childElements = element.querySelectorAll('p, span, div, br');
+    const textNodes = this.getTextNodes(element);
+    
+    log('trace', 'DOM structure analysis:', {
+      childElements: childElements.length,
+      textNodes: textNodes.length,
+      hasMultipleChildren: childElements.length > 0,
+      hasMultipleTextNodes: textNodes.length > 1
+    });
+
+    // Consider it complex if there are multiple formatting elements or text nodes
+    return childElements.length > 0 || textNodes.length > 1;
+  }
+
+  /**
+   * Get all text nodes within an element
+   */
+  private getTextNodes(element: HTMLElement): Text[] {
+    const textNodes: Text[] = [];
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.textContent?.trim()) { // Only count non-empty text nodes
+        textNodes.push(node as Text);
+      }
+    }
+
+    return textNodes;
+  }
+
+  /**
+   * Detect if element is part of a rich text editor
+   */
+  private isRichTextEditor(element: HTMLElement): boolean {
+    // Check for common rich text editor class names and attributes
+    const richTextIndicators = [
+      'ql-editor', // Quill
+      'DraftEditor-root', // Draft.js
+      'tox-edit-area', // TinyMCE
+      'cke_editable', // CKEditor
+      'fr-element', // Froala
+      'note-editable', // Summernote
+      'ace_editor', // ACE Editor
+      'CodeMirror' // CodeMirror
+    ];
+
+    const className = element.className || '';
+    const hasRichTextClass = richTextIndicators.some(indicator => 
+      className.includes(indicator)
+    );
+
+    // Check parent elements too
+    let parent = element.parentElement;
+    let parentHasRichTextClass = false;
+    let depth = 0;
+    while (parent && depth < 5) { // Check up to 5 levels up
+      const parentClassName = parent.className || '';
+      if (richTextIndicators.some(indicator => parentClassName.includes(indicator))) {
+        parentHasRichTextClass = true;
+        break;
+      }
+      parent = parent.parentElement;
+      depth++;
+    }
+
+    log('trace', 'Rich text editor detection:', {
+      hasRichTextClass,
+      parentHasRichTextClass,
+      className: className.slice(0, 100) // First 100 chars
+    });
+
+    return hasRichTextClass || parentHasRichTextClass;
+  }
+
+  /**
+   * Detect framework-specific patterns that might interfere with text manipulation
+   */
+  private hasFrameworkSpecificPatterns(element: HTMLElement): boolean {
+    // Check for React/Vue data attributes
+    const hasReactAttributes = Object.keys(element.dataset).some(key => 
+      key.startsWith('react') || key.startsWith('vue')
+    );
+
+    // Check for Angular attributes
+    const hasAngularAttributes = Array.from(element.attributes).some(attr => 
+      attr.name.startsWith('ng-') || attr.name.startsWith('data-ng-')
+    );
+
+    // Check for shadow DOM
+    const hasShadowDOM = element.shadowRoot !== null;
+
+    log('trace', 'Framework pattern detection:', {
+      hasReactAttributes,
+      hasAngularAttributes,
+      hasShadowDOM
+    });
+
+    return hasReactAttributes || hasAngularAttributes || hasShadowDOM;
+  }
+
   private shouldTriggerExpansion(event: KeyboardEvent): boolean {
     log('trace', 'Checking if key should trigger expansion');
 
@@ -474,13 +620,20 @@ class ContentScript {
   private extractPotentialShortcut(textInfo: TextInputInfo): string | null {
     log('trace', 'Extracting potential shortcut from text input');
 
-    const { value, selectionStart } = textInfo;
+    const { value, selectionStart, element } = textInfo;
     log('trace', 'Text analysis:', {
       totalLength: value.length,
       cursorPosition: selectionStart,
       textBeforeCursor: value.substring(0, selectionStart).slice(-20) // Last 20 chars
     });
 
+    // For complex DOM structures, try to get text more intelligently
+    if (this.hasComplexDOMStructure(element)) {
+      log('debug', 'Using complex DOM shortcut extraction');
+      return this.extractShortcutFromComplexDOM(element);
+    }
+
+    // Standard extraction for simple elements
     // Look for word boundaries before cursor
     const textBeforeCursor = value.substring(0, selectionStart);
     const words = textBeforeCursor.split(/\s+/);
@@ -499,6 +652,74 @@ class ContentScript {
     }
 
     log('trace', 'No valid shortcut pattern found');
+    return null;
+  }
+
+  /**
+   * Extract shortcut from complex DOM structures by analyzing text nodes and cursor position
+   */
+  private extractShortcutFromComplexDOM(element: HTMLElement): string | null {
+    log('trace', 'Extracting shortcut from complex DOM structure');
+
+    try {
+      // Get current selection/cursor position
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        log('trace', 'No selection available in complex DOM');
+        return null;
+      }
+
+      const range = selection.getRangeAt(0);
+      const cursorNode = range.startContainer;
+      const cursorOffset = range.startOffset;
+
+      log('trace', 'Cursor position in complex DOM:', {
+        nodeType: cursorNode.nodeType,
+        nodeValue: cursorNode.nodeValue?.slice(-20), // Last 20 chars
+        offset: cursorOffset
+      });
+
+      // If cursor is in a text node, extract text before cursor
+      if (cursorNode.nodeType === Node.TEXT_NODE) {
+        const textContent = cursorNode.textContent || '';
+        const textBeforeCursor = textContent.substring(0, cursorOffset);
+        
+        // Find the last word before cursor
+        const words = textBeforeCursor.split(/\s+/);
+        const lastWord = words[words.length - 1];
+
+        log('trace', 'Complex DOM word analysis:', {
+          textBeforeCursor: textBeforeCursor.slice(-20),
+          lastWord,
+          wordCount: words.length
+        });
+
+        if (lastWord && /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(lastWord)) {
+          log('debug', `Valid shortcut found in complex DOM: "${lastWord}"`);
+          return lastWord;
+        }
+      } else if (cursorNode.nodeType === Node.ELEMENT_NODE) {
+        // Cursor is at element boundary, check text content
+        const textContent = cursorNode.textContent || '';
+        const words = textContent.trim().split(/\s+/);
+        const lastWord = words[words.length - 1];
+
+        log('trace', 'Element node shortcut analysis:', {
+          textContent: textContent.slice(-30),
+          lastWord
+        });
+
+        if (lastWord && /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(lastWord)) {
+          log('debug', `Valid shortcut found in element node: "${lastWord}"`);
+          return lastWord;
+        }
+      }
+
+    } catch (error) {
+      log('warn', 'Failed to extract shortcut from complex DOM:', error);
+    }
+
+    log('trace', 'No valid shortcut found in complex DOM');
     return null;
   }
 
@@ -612,6 +833,130 @@ class ContentScript {
       snippetContentLength: snippet.content.length
     });
 
+    // Check if we should use smart clipboard insertion
+    const useSmartInsertion = this.hasComplexDOMStructure(element);
+    
+    if (useSmartInsertion) {
+      log('debug', 'Using smart clipboard-based insertion for complex DOM');
+      await this.performSmartReplacement(snippet, context, shortcut);
+    } else {
+      log('debug', 'Using direct text manipulation for simple DOM');
+      await this.performDirectReplacement(snippet, context, shortcut);
+    }
+
+    // Show notification if enabled
+    if (this.settings?.showNotifications) {
+      log('debug', 'Showing expansion notification');
+      this.showExpansionNotification(snippet);
+    } else {
+      log('trace', 'Notifications disabled - skipping notification');
+    }
+
+    log('info', `Text replacement completed: "${shortcut}" -> "${snippet.content.slice(0, 50)}${snippet.content.length > 50 ? '...' : ''}"`);
+  }
+
+  /**
+   * Perform smart replacement using clipboard for complex DOM structures
+   */
+  private async performSmartReplacement(
+    snippet: Snippet,
+    context: ExpansionContext,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Performing smart clipboard-based replacement');
+
+    const { element } = context;
+
+    try {
+      // First, select the shortcut text to be replaced
+      await this.selectShortcutInComplexDOM(element, shortcut);
+
+      // Use smart insertion to replace selected text
+      const insertionSuccess = await performSmartTextInsertion(
+        element, 
+        snippet.content, 
+        true // preserve formatting
+      );
+
+      if (insertionSuccess) {
+        log('info', 'Smart replacement completed successfully');
+      } else {
+        log('warn', 'Smart replacement failed, falling back to direct replacement');
+        await this.performDirectReplacement(snippet, context, shortcut);
+      }
+
+    } catch (error) {
+      log('error', 'Smart replacement failed:', error);
+      log('debug', 'Falling back to direct replacement due to error');
+      await this.performDirectReplacement(snippet, context, shortcut);
+    }
+  }
+
+  /**
+   * Select the shortcut text in complex DOM structures
+   */
+  private async selectShortcutInComplexDOM(element: HTMLElement, shortcut: string): Promise<void> {
+    log('debug', `Selecting shortcut "${shortcut}" in complex DOM`);
+
+    try {
+      const selection = window.getSelection();
+      if (!selection) {
+        throw new Error('No selection API available');
+      }
+
+      // Find the shortcut text and select it
+      const range = document.createRange();
+      const textNodes = this.getTextNodes(element);
+      
+      log('trace', `Searching for shortcut in ${textNodes.length} text nodes`);
+
+      for (const textNode of textNodes) {
+        const textContent = textNode.textContent || '';
+        const shortcutIndex = textContent.lastIndexOf(shortcut);
+        
+        if (shortcutIndex !== -1) {
+          // Check if it's at a word boundary
+          const beforeChar = shortcutIndex > 0 ? textContent[shortcutIndex - 1] : ' ';
+          const afterChar = shortcutIndex + shortcut.length < textContent.length 
+            ? textContent[shortcutIndex + shortcut.length] 
+            : ' ';
+          
+          if (/\s/.test(beforeChar) || /\s/.test(afterChar) || shortcutIndex === 0) {
+            log('debug', `Found shortcut in text node at index ${shortcutIndex}`);
+            
+            // Select the shortcut text
+            range.setStart(textNode, shortcutIndex);
+            range.setEnd(textNode, shortcutIndex + shortcut.length);
+            
+            selection.removeAllRanges();
+            selection.addRange(range);
+            
+            log('trace', 'Shortcut text selected successfully');
+            return;
+          }
+        }
+      }
+
+      log('warn', 'Could not find shortcut text to select in complex DOM');
+      
+    } catch (error) {
+      log('error', 'Failed to select shortcut in complex DOM:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Perform direct text replacement for simple DOM structures
+   */
+  private async performDirectReplacement(
+    snippet: Snippet,
+    context: ExpansionContext,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Performing direct text replacement');
+
+    const { element, text, cursorPosition } = context;
+
     // Find the shortcut position in the text
     const shortcutStart = cursorPosition - shortcut.length;
     log('trace', `Shortcut position: ${shortcutStart} to ${cursorPosition}`);
@@ -642,16 +987,6 @@ class ContentScript {
     const newCursorPosition = shortcutStart + snippet.content.length;
     log('trace', `Setting cursor position to: ${newCursorPosition}`);
     this.setCursorPosition(element, newCursorPosition);
-
-    // Show notification if enabled
-    if (this.settings?.showNotifications) {
-      log('debug', 'Showing expansion notification');
-      this.showExpansionNotification(snippet);
-    } else {
-      log('trace', 'Notifications disabled - skipping notification');
-    }
-
-    log('info', `Text replacement completed: "${shortcut}" -> "${snippet.content.slice(0, 50)}${snippet.content.length > 50 ? '...' : ''}"`);
   }
 
   private async handleDynamicSnippet(snippet: Snippet, context: ExpansionContext): Promise<void> {
@@ -992,40 +1327,29 @@ class ContentScript {
       log('debug', `Processing ${snippet.variables.length} variables`);
       for (const variable of snippet.variables) {
         const value = variables[variable.name] || variable.defaultValue || '';
-        const regex = new RegExp(`{${variable.name}}`, 'g');
-        const beforeReplace = content;
-        content = content.replace(regex, value);
-
-        log('trace', 'Variable replacement:', {
-          variableName: variable.name,
-          value,
-          replacementsMade: beforeReplace !== content
-        });
+        const placeholder = `{{${variable.name}}}`;
+        content = content.replace(new RegExp(placeholder, 'g'), value);
+        log('trace', `Replaced variable ${variable.name}: ${placeholder} -> ${value.slice(0, 50)}`);
       }
       log('debug', 'Variable processing completed');
     }
 
-    log('trace', 'Constructing new text');
-    // Insert content at cursor position
-    const textBefore = text.substring(0, cursorPosition);
-    const textAfter = text.substring(cursorPosition);
-    const newText = textBefore + content + textAfter;
-
-    log('trace', 'Text construction details:', {
-      originalLength: text.length,
-      newLength: newText.length,
-      insertedLength: content.length,
-      textBeforeLength: textBefore.length,
-      textAfterLength: textAfter.length
-    });
-
-    log('debug', 'Updating element with new text');
-    setElementText(element, newText);
-
-    // Set cursor position after inserted content
-    const newCursorPosition = cursorPosition + content.length;
-    log('debug', `Setting cursor to position: ${newCursorPosition}`);
-    this.setCursorPosition(element, newCursorPosition);
+    // Check if we should use smart insertion
+    const useSmartInsertion = this.hasComplexDOMStructure(element);
+    
+    if (useSmartInsertion) {
+      log('debug', 'Using smart clipboard insertion for direct insertion');
+      
+      const insertionSuccess = await performSmartTextInsertion(element, content, true);
+      
+      if (!insertionSuccess) {
+        log('warn', 'Smart insertion failed, falling back to direct text manipulation');
+        await this.performDirectTextInsertion(element, text, cursorPosition, content);
+      }
+    } else {
+      log('debug', 'Using direct text manipulation for insertion');
+      await this.performDirectTextInsertion(element, text, cursorPosition, content);
+    }
 
     log('trace', 'Notifying background script of direct insertion');
     // Notify background script - serialize context to avoid DOM element cloning issues
@@ -1050,6 +1374,39 @@ class ContentScript {
     }
 
     log('info', `Direct insertion completed: ${snippet.name}`);
+  }
+
+  /**
+   * Perform direct text insertion for simple elements
+   */
+  private async performDirectTextInsertion(
+    element: HTMLElement,
+    text: string,
+    cursorPosition: number,
+    content: string
+  ): Promise<void> {
+    log('trace', 'Constructing new text for direct insertion');
+    
+    // Insert content at cursor position
+    const textBefore = text.substring(0, cursorPosition);
+    const textAfter = text.substring(cursorPosition);
+    const newText = textBefore + content + textAfter;
+
+    log('trace', 'Text construction details:', {
+      originalLength: text.length,
+      newLength: newText.length,
+      insertedLength: content.length,
+      textBeforeLength: textBefore.length,
+      textAfterLength: textAfter.length
+    });
+
+    log('debug', 'Updating element with new text');
+    setElementText(element, newText);
+
+    // Set cursor position after inserted content
+    const newCursorPosition = cursorPosition + content.length;
+    log('debug', `Setting cursor to position: ${newCursorPosition}`);
+    this.setCursorPosition(element, newCursorPosition);
   }
 }
 

@@ -168,6 +168,121 @@ export class ClipboardManager {
   }
 
   /**
+   * Perform smart text insertion using clipboard without overwriting user's clipboard
+   * This method temporarily uses the clipboard to insert text naturally, 
+   * preserving complex DOM structures and website-specific text handling
+   */
+  async performSmartInsertion(
+    element: HTMLElement, 
+    textToInsert: string,
+    preserveFormatting: boolean = true
+  ): Promise<boolean> {
+    log('debug', 'Starting smart clipboard-based insertion');
+    
+    let originalClipboard = '';
+    let clipboardBackupSuccess = false;
+
+    try {
+      // Step 1: Backup current clipboard content
+      log('trace', 'Backing up current clipboard content');
+      originalClipboard = await this.readText();
+      clipboardBackupSuccess = true;
+      log('debug', `Clipboard backup successful, content length: ${originalClipboard.length}`);
+
+      // Step 2: Put our text in clipboard temporarily
+      log('trace', 'Writing snippet content to clipboard');
+      const writeSuccess = await this.writeText(textToInsert);
+      if (!writeSuccess) {
+        log('error', 'Failed to write snippet content to clipboard');
+        return false;
+      }
+
+      // Step 3: Focus the element and paste
+      log('trace', 'Focusing element and performing paste operation');
+      element.focus();
+      
+      // Small delay to ensure focus is set
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Try modern approach first, then fallback to execCommand
+      let pasteSuccess = false;
+      
+      if (navigator.clipboard && 'read' in navigator.clipboard) {
+        try {
+          // Use modern clipboard API with paste event simulation
+          log('trace', 'Attempting modern clipboard paste simulation');
+          const clipboardData = await navigator.clipboard.read();
+          
+          // Create and dispatch paste event
+          const pasteEvent = new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: new DataTransfer()
+          });
+          
+          // Add text data to clipboard event
+          pasteEvent.clipboardData?.setData('text/plain', textToInsert);
+          if (preserveFormatting) {
+            pasteEvent.clipboardData?.setData('text/html', textToInsert.replace(/\n/g, '<br>'));
+          }
+          
+          const eventResult = element.dispatchEvent(pasteEvent);
+          pasteSuccess = eventResult;
+          log('trace', `Modern paste event result: ${eventResult}`);
+          
+        } catch (modernError) {
+          log('trace', 'Modern clipboard approach failed, falling back to execCommand');
+        }
+      }
+      
+      // Fallback to execCommand if modern approach fails
+      if (!pasteSuccess) {
+        try {
+          log('trace', 'Using execCommand paste fallback');
+          pasteSuccess = document.execCommand('paste');
+          log('trace', `execCommand paste result: ${pasteSuccess}`);
+        } catch (execError) {
+          log('warn', 'execCommand paste failed:', execError);
+        }
+      }
+
+      // Step 4: Restore original clipboard content
+      log('trace', 'Restoring original clipboard content');
+      if (clipboardBackupSuccess) {
+        const restoreSuccess = await this.writeText(originalClipboard);
+        if (restoreSuccess) {
+          log('debug', 'Original clipboard content restored successfully');
+        } else {
+          log('warn', 'Failed to restore original clipboard content');
+        }
+      }
+
+      if (pasteSuccess) {
+        log('info', 'Smart clipboard insertion completed successfully');
+        return true;
+      } else {
+        log('warn', 'Smart clipboard insertion failed - paste operation unsuccessful');
+        return false;
+      }
+
+    } catch (error) {
+      log('error', 'Smart clipboard insertion failed:', error);
+      
+      // Emergency restore of clipboard if something went wrong
+      if (clipboardBackupSuccess && originalClipboard !== '') {
+        try {
+          await this.writeText(originalClipboard);
+          log('debug', 'Emergency clipboard restore completed');
+        } catch (restoreError) {
+          log('error', 'Emergency clipboard restore failed:', restoreError);
+        }
+      }
+      
+      return false;
+    }
+  }
+
+  /**
    * Monitor clipboard changes (if supported)
    */
   async startClipboardMonitoring(callback: (text: string) => void): Promise<void> {
@@ -199,4 +314,16 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
 export async function getClipboardContent(): Promise<string> {
   return ClipboardManager.getInstance().getClipboardForVariable();
+}
+
+/**
+ * Perform smart text insertion using clipboard-based approach
+ * This preserves the user's clipboard while enabling natural text insertion
+ */
+export async function performSmartTextInsertion(
+  element: HTMLElement, 
+  text: string,
+  preserveFormatting: boolean = true
+): Promise<boolean> {
+  return ClipboardManager.getInstance().performSmartInsertion(element, text, preserveFormatting);
 }
