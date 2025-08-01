@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenBlaze - Complex DOM Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .test-container {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-title {
+            color: #333;
+            border-bottom: 2px solid #00ACC0;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        
+        /* Rich text editor simulation */
+        .rich-editor {
+            border: 1px solid #ddd;
+            min-height: 150px;
+            padding: 15px;
+            background: white;
+            border-radius: 4px;
+        }
+        
+        .rich-editor p {
+            margin: 0 0 10px 0;
+            padding: 2px 0;
+        }
+        
+        .rich-editor span {
+            display: inline-block;
+        }
+        
+        /* Framework simulation styles */
+        .react-like-editor {
+            border: 2px solid #61dafb;
+            padding: 15px;
+            min-height: 100px;
+            background: #f9f9f9;
+        }
+        
+        .vue-like-editor {
+            border: 2px solid #4fc08d;
+            padding: 15px;
+            min-height: 100px;
+            background: #f0f8f5;
+        }
+        
+        /* Complex nested structure */
+        .complex-nested {
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #fafafa;
+        }
+        
+        .complex-nested p {
+            background: #e8e8e8;
+            padding: 5px;
+            margin: 5px 0;
+            border-left: 3px solid #00ACC0;
+        }
+        
+        .instructions {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        
+        .simple-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>OpenBlaze Complex DOM Test Page</h1>
+    
+    <div class="instructions">
+        <h3>📋 Testing Instructions</h3>
+        <p><strong>Before testing:</strong> Make sure the OpenBlaze extension is installed and enabled.</p>
+        <p><strong>Test shortcuts:</strong> Try typing shortcuts like "sig", "addr", "phone" followed by a space in the different input fields below.</p>
+        <p><strong>Expected behavior:</strong> The extension should automatically detect complex DOM structures and use smart clipboard-based insertion to preserve formatting.</p>
+    </div>
+
+    <div class="test-container">
+        <h2 class="test-title">1. Simple Input (Direct Text Manipulation)</h2>
+        <p>This should use the traditional direct text manipulation approach:</p>
+        <input type="text" class="simple-input" placeholder="Type a shortcut here (e.g., 'sig' + space)">
+        <br><br>
+        <textarea class="simple-input" rows="3" placeholder="Type a shortcut here (e.g., 'addr' + space)"></textarea>
+    </div>
+
+    <div class="test-container">
+        <h2 class="test-title">2. Rich Text Editor Simulation (Smart Insertion)</h2>
+        <p>This simulates a rich text editor with complex DOM structure:</p>
+        <div class="rich-editor" contenteditable="true">
+            <p>This is a <span>rich text</span> editor simulation.</p>
+            <p>Try typing a shortcut here: </p>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2 class="test-title">3. Framework-like Editor (Smart Insertion)</h2>
+        <p>This simulates React/Vue-like components:</p>
+        
+        <h4>React-like Component:</h4>
+        <div class="react-like-editor" contenteditable="true" data-react-component="true">
+            <div data-react-text="true">Type your shortcut in this React-like editor: </div>
+        </div>
+        
+        <h4>Vue-like Component:</h4>
+        <div class="vue-like-editor" contenteditable="true" data-vue-component="true">
+            <div data-vue-text="true">Type your shortcut in this Vue-like editor: </div>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2 class="test-title">4. Complex Nested Structure (Smart Insertion)</h2>
+        <p>This simulates complex nested DOM with multiple text nodes:</p>
+        <div class="complex-nested" contenteditable="true">
+            <p>Paragraph 1: <span>Start typing here</span></p>
+            <p>Paragraph 2: <span>Or here</span> <span>with multiple spans</span></p>
+            <p>Paragraph 3: <em>Italicized text</em> and <strong>bold text</strong></p>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2 class="test-title">5. Testing Multi-line Snippets</h2>
+        <p>Test how multi-line content is handled in complex structures:</p>
+        <div class="rich-editor" contenteditable="true">
+            <p>Type 'addr' here to test multi-line address expansion: </p>
+        </div>
+    </div>
+
+    <div class="instructions">
+        <h3>🔍 What to Look For</h3>
+        <ul>
+            <li><strong>Simple inputs:</strong> Should expand normally using direct text manipulation</li>
+            <li><strong>Complex editors:</strong> Should detect complexity and use clipboard-based insertion</li>
+            <li><strong>Formatting preservation:</strong> Multi-line content should maintain proper line breaks</li>
+            <li><strong>Cursor positioning:</strong> Cursor should be positioned correctly after expansion</li>
+            <li><strong>No clipboard interference:</strong> Your clipboard content should remain unchanged</li>
+        </ul>
+    </div>
+
+    <script>
+        // Add some dynamic behavior to simulate real-world scenarios
+        document.addEventListener('DOMContentLoaded', function() {
+            // Simulate dynamic content updates
+            const richEditors = document.querySelectorAll('.rich-editor, .react-like-editor, .vue-like-editor');
+            
+            richEditors.forEach(editor => {
+                editor.addEventListener('input', function(e) {
+                    // Simulate framework-like DOM updates
+                    if (Math.random() > 0.7) { // 30% chance
+                        const text = e.target.textContent;
+                        if (text && text.length > 10) {
+                            // Wrap some text in spans to simulate framework behavior
+                            const lastWord = text.split(' ').pop();
+                            if (lastWord && lastWord.length > 3) {
+                                // This would normally cause issues with simple text manipulation
+                                console.log('Simulating complex DOM update for:', lastWord);
+                            }
+                        }
+                    }
+                });
+            });
+            
+            // Add visual feedback
+            document.querySelectorAll('[contenteditable="true"]').forEach(element => {
+                element.addEventListener('focus', function() {
+                    this.style.backgroundColor = '#f0f8ff';
+                });
+                
+                element.addEventListener('blur', function() {
+                    this.style.backgroundColor = '';
+                });
+            });
+        });
+    </script>
+</body>
+</html>
