@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenBlaze - ProseMirror Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .test-container {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .prosemirror-container {
+            border: 2px solid #007acc;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        
+        .ProseMirror {
+            outline: none;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+        }
+        
+        .ProseMirror p {
+            margin: 0.5em 0;
+        }
+        
+        .ProseMirror p:first-child {
+            margin-top: 0;
+        }
+        
+        .ProseMirror p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .instructions {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .status {
+            background: #f0f8f0;
+            border: 1px solid #4caf50;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .log-container {
+            background: #1e1e1e;
+            color: #f0f0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>OpenBlaze - ProseMirror Specific Test</h1>
+    
+    <div class="instructions">
+        <h3>🎯 Testing ProseMirror Integration</h3>
+        <p><strong>This page simulates a ProseMirror editor environment similar to ChatGPT, Notion, and other modern text editors.</strong></p>
+        <p><strong>Test:</strong> Type "cblk" (or your multi-line snippet shortcut) followed by a space in the editor below.</p>
+        <p><strong>Expected:</strong> The snippet should expand with proper line breaks preserved, not collapsed to a single line.</p>
+    </div>
+
+    <div class="test-container">
+        <h2>ProseMirror Editor Simulation</h2>
+        <p>This mimics the structure and behavior of ProseMirror editors:</p>
+        
+        <div class="prosemirror-container">
+            <div id="prosemirror-editor" class="ProseMirror" contenteditable="true" role="textbox" aria-multiline="true">
+                <p>Type your shortcut here...</p>
+            </div>
+        </div>
+        
+        <div class="status" id="status">
+            Ready for testing. Type a shortcut and press space.
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h3>Debug Information</h3>
+        <div class="log-container" id="log-container">
+            Waiting for extension activity...
+        </div>
+        <button onclick="clearLogs()">Clear Logs</button>
+        <button onclick="testSnippet()">Test Manual Snippet</button>
+    </div>
+
+    <script>
+        let logContainer;
+        let statusElement;
+        let editor;
+
+        function log(message) {
+            if (!logContainer) logContainer = document.getElementById('log-container');
+            const timestamp = new Date().toLocaleTimeString();
+            logContainer.innerHTML += `[${timestamp}] ${message}\n`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function updateStatus(message) {
+            if (!statusElement) statusElement = document.getElementById('status');
+            statusElement.textContent = message;
+            log(`Status: ${message}`);
+        }
+
+        function clearLogs() {
+            if (!logContainer) logContainer = document.getElementById('log-container');
+            logContainer.innerHTML = 'Logs cleared.\n';
+        }
+
+        function testSnippet() {
+            if (!editor) editor = document.getElementById('prosemirror-editor');
+            
+            // Simulate what the extension should do
+            log('Manual test: Inserting multi-line content');
+            
+            const testContent = `"""
+This is a test
+Multi-line content
+That should preserve
+Line breaks
+"""`;
+
+            // Focus the editor
+            editor.focus();
+            
+            // Clear existing content
+            editor.innerHTML = '';
+            
+            // Insert test content
+            const lines = testContent.split('\n');
+            lines.forEach((line, index) => {
+                const p = document.createElement('p');
+                p.textContent = line;
+                editor.appendChild(p);
+            });
+
+            updateStatus('Manual test completed - check if formatting is preserved');
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            editor = document.getElementById('prosemirror-editor');
+            logContainer = document.getElementById('log-container');
+            statusElement = document.getElementById('status');
+
+            log('Page loaded - ProseMirror test environment ready');
+            
+            // Monitor editor activity
+            editor.addEventListener('input', function(e) {
+                log(`Input event: ${e.inputType || 'unknown'}, data: "${e.data || 'none'}"`);
+                
+                const content = editor.textContent || editor.innerText || '';
+                log(`Current content: "${content.slice(0, 50)}${content.length > 50 ? '...' : ''}"`);
+                
+                // Check for multi-line content
+                const hasMultipleLines = editor.querySelectorAll('p').length > 1;
+                log(`Has multiple paragraphs: ${hasMultipleLines}`);
+                
+                updateStatus(`Content length: ${content.length}, Paragraphs: ${editor.querySelectorAll('p').length}`);
+            });
+
+            editor.addEventListener('keydown', function(e) {
+                log(`KeyDown: ${e.key} (${e.code}) - Ctrl:${e.ctrlKey}, Shift:${e.shiftKey}`);
+            });
+
+            editor.addEventListener('paste', function(e) {
+                log('Paste event detected');
+                const clipboardData = e.clipboardData || window.clipboardData;
+                if (clipboardData) {
+                    const plainText = clipboardData.getData('text/plain');
+                    const htmlText = clipboardData.getData('text/html');
+                    log(`Paste data - Plain: "${plainText.slice(0, 50)}${plainText.length > 50 ? '...' : ''}""`);
+                    log(`Paste data - HTML: "${htmlText.slice(0, 50)}${htmlText.length > 50 ? '...' : ''}""`);
+                }
+            });
+
+            // Simulate ProseMirror's content change detection
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                        log(`DOM mutation: ${mutation.type}, nodes added: ${mutation.addedNodes.length}, removed: ${mutation.removedNodes.length}`);
+                        
+                        // Check if content was modified
+                        const content = editor.textContent || '';
+                        if (content.includes('"""')) {
+                            const lines = content.split('\n').length;
+                            const paragraphs = editor.querySelectorAll('p').length;
+                            log(`Multi-line content detected - Text lines: ${lines}, DOM paragraphs: ${paragraphs}`);
+                            
+                            if (lines > 1 && paragraphs === 1) {
+                                updateStatus('⚠️ Content collapsed to single paragraph!');
+                            } else if (paragraphs > 1) {
+                                updateStatus('✅ Multi-line formatting preserved!');
+                            }
+                        }
+                    }
+                });
+            });
+
+            observer.observe(editor, {
+                childList: true,
+                subtree: true,
+                characterData: true
+            });
+
+            // Simulate some ProseMirror behavior that might interfere
+            setTimeout(function() {
+                log('Simulating ProseMirror initialization complete');
+                updateStatus('ProseMirror simulation ready - try your snippet!');
+            }, 1000);
+        });
+
+        // Override console.log to capture extension logs
+        const originalLog = console.log;
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+            ).join(' ');
+            
+            if (message.includes('OpenBlaze') || message.includes('TRACE') || message.includes('DEBUG')) {
+                log(`Extension: ${message}`);
+            }
+        };
+    </script>
+</body>
+</html>
