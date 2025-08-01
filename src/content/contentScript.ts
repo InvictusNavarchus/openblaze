@@ -440,6 +440,37 @@ class ContentScript {
   }
 
   /**
+   * Check if element is a Quill editor specifically
+   */
+  private isQuillEditor(element: HTMLElement): boolean {
+    const className = element.className || '';
+    const isQuill = className.includes('ql-editor');
+    
+    // Also check parent elements for Quill container classes
+    let parent = element.parentElement;
+    let parentIsQuill = false;
+    let depth = 0;
+    while (parent && depth < 3) {
+      const parentClassName = parent.className || '';
+      if (parentClassName.includes('ql-container') || parentClassName.includes('ql-bubble') || parentClassName.includes('ql-snow')) {
+        parentIsQuill = true;
+        break;
+      }
+      parent = parent.parentElement;
+      depth++;
+    }
+    
+    log('trace', 'Quill editor detection:', {
+      isQuill,
+      parentIsQuill,
+      className: className.slice(0, 100),
+      hasQuillEditor: className.includes('ql-editor')
+    });
+    
+    return isQuill || parentIsQuill;
+  }
+
+  /**
    * Detect framework-specific patterns that might interfere with text manipulation
    */
   private hasFrameworkSpecificPatterns(element: HTMLElement): boolean {
@@ -1165,6 +1196,12 @@ class ContentScript {
     // Cancel any pending expansion checks to avoid interference
     this.debouncedCheckExpansion.cancel();
 
+    // Special handling for Quill editors (like Gemini)
+    if (this.isQuillEditor(element)) {
+      log('debug', 'Detected Quill editor - using specialized approach');
+      return this.tryQuillEditorReplacement(element, content, shortcut);
+    }
+
     const lines = content.split('\n');
     const maxAttempts = 5;
     let attempt = 0;
@@ -1258,6 +1295,415 @@ class ContentScript {
     }
 
     log('warn', 'All persistent DOM replacement attempts failed');
+  }
+
+  /**
+   * Specialized replacement for Quill editors (like Gemini)
+   * Quill editors are very aggressive about controlling content and need special handling
+   */
+  private async tryQuillEditorReplacement(
+    element: HTMLElement,
+    content: string,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Using specialized Quill editor replacement strategy');
+
+    try {
+      // Step 1: Try to access Quill instance directly
+      const quillInstance = this.getQuillInstance(element);
+      if (quillInstance) {
+        log('debug', 'Found Quill instance - using API-based replacement');
+        return this.replaceUsingQuillAPI(quillInstance, content, shortcut);
+      }
+
+      // Step 2: Use selection-based replacement with Quill-specific timing
+      log('debug', 'No Quill instance found - using selection-based approach');
+      await this.replaceUsingQuillSelection(element, content, shortcut);
+
+    } catch (error) {
+      log('error', 'Quill editor replacement failed:', error);
+      // Fallback to standard DOM replacement
+      log('debug', 'Falling back to standard DOM replacement');
+      await this.tryStandardDOMReplacement(element, content, shortcut);
+    }
+  }
+
+  /**
+   * Try to get the Quill instance from the element or its parents
+   */
+  private getQuillInstance(element: HTMLElement): any {
+    log('trace', 'Searching for Quill instance');
+
+    // Check if the element has a __quill property
+    if ((element as any).__quill) {
+      log('debug', 'Found Quill instance on element itself');
+      return (element as any).__quill;
+    }
+
+    // Check parent elements for Quill instance
+    let parent = element.parentElement;
+    let depth = 0;
+    while (parent && depth < 5) {
+      if ((parent as any).__quill) {
+        log('debug', `Found Quill instance on parent at depth ${depth}`);
+        return (parent as any).__quill;
+      }
+      parent = parent.parentElement;
+      depth++;
+    }
+
+    // Try to find Quill in the global scope or common patterns
+    if (typeof (window as any).Quill !== 'undefined') {
+      log('trace', 'Quill constructor available globally');
+      // Look for Quill instances in common locations
+      const containers = document.querySelectorAll('.ql-container, .ql-editor');
+      for (const container of Array.from(containers)) {
+        if (container.contains(element) && (container as any).__quill) {
+          log('debug', 'Found Quill instance in container');
+          return (container as any).__quill;
+        }
+      }
+    }
+
+    log('trace', 'No Quill instance found');
+    return null;
+  }
+
+  /**
+   * Replace text using Quill API directly
+   */
+  private async replaceUsingQuillAPI(
+    quill: any,
+    content: string,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Replacing text using Quill API');
+
+    try {
+      // Get current text and find shortcut position
+      const currentText = quill.getText();
+      const shortcutIndex = currentText.lastIndexOf(shortcut);
+      
+      if (shortcutIndex === -1) {
+        log('warn', 'Shortcut not found in Quill text');
+        return;
+      }
+
+      log('trace', 'Quill API replacement details:', {
+        currentTextLength: currentText.length,
+        shortcutIndex,
+        shortcutLength: shortcut.length,
+        contentLength: content.length
+      });
+
+      // Delete the shortcut text
+      quill.deleteText(shortcutIndex, shortcut.length);
+      
+      // Insert the new content
+      quill.insertText(shortcutIndex, content);
+      
+      // Set cursor position after the inserted content
+      const newPosition = shortcutIndex + content.length;
+      quill.setSelection(newPosition, 0);
+
+      log('info', 'Quill API replacement completed successfully');
+
+    } catch (error) {
+      log('error', 'Quill API replacement failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Replace text using selection-based approach optimized for Quill
+   */
+  private async replaceUsingQuillSelection(
+    element: HTMLElement,
+    content: string,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Using Quill-optimized selection replacement');
+
+    try {
+      // First, ensure we have proper selection of the shortcut
+      await this.selectShortcutInQuillEditor(element, shortcut);
+      
+      // Wait a bit for Quill to process the selection
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Try multiple approaches in sequence
+      let success = false;
+
+      // Approach 1: Use document.execCommand (still works in some cases)
+      if (!success && document.queryCommandSupported('insertText')) {
+        log('trace', 'Trying execCommand insertText');
+        success = document.execCommand('insertText', false, content);
+        log('trace', `execCommand result: ${success}`);
+        
+        if (success) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          success = this.verifyContentReplacement(element, content);
+        }
+      }
+
+      // Approach 2: Use composition events (works well with modern editors)
+      if (!success) {
+        log('trace', 'Trying composition events');
+        success = await this.tryCompositionEvents(element, content);
+      }
+
+      // Approach 3: Use keyboard simulation
+      if (!success) {
+        log('trace', 'Trying keyboard simulation');
+        success = await this.tryKeyboardSimulation(element, content);
+      }
+
+      if (!success) {
+        throw new Error('All Quill selection methods failed');
+      }
+
+      log('info', 'Quill selection replacement completed successfully');
+
+    } catch (error) {
+      log('error', 'Quill selection replacement failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Select shortcut text specifically in Quill editors
+   */
+  private async selectShortcutInQuillEditor(element: HTMLElement, shortcut: string): Promise<void> {
+    log('debug', 'Selecting shortcut in Quill editor');
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error('No selection API available');
+    }
+
+    // Clear any existing selection
+    selection.removeAllRanges();
+
+    // Find the text content and shortcut position
+    const textContent = element.textContent || '';
+    const shortcutIndex = textContent.lastIndexOf(shortcut);
+    
+    if (shortcutIndex === -1) {
+      throw new Error('Shortcut not found in element text');
+    }
+
+    log('trace', 'Quill shortcut selection:', {
+      textContent: textContent.slice(0, 100),
+      shortcutIndex,
+      shortcut
+    });
+
+    // Create range and select the shortcut text
+    const range = document.createRange();
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let currentOffset = 0;
+    let textNode: Text | null = null;
+    let nodeStartOffset = 0;
+
+    // Find the text node containing the shortcut
+    let node;
+    while (node = walker.nextNode()) {
+      const nodeText = node.textContent || '';
+      if (currentOffset <= shortcutIndex && currentOffset + nodeText.length > shortcutIndex) {
+        textNode = node as Text;
+        nodeStartOffset = shortcutIndex - currentOffset;
+        break;
+      }
+      currentOffset += nodeText.length;
+    }
+
+    if (!textNode) {
+      throw new Error('Could not find text node containing shortcut');
+    }
+
+    // Set the range to select the shortcut
+    range.setStart(textNode, nodeStartOffset);
+    range.setEnd(textNode, nodeStartOffset + shortcut.length);
+    selection.addRange(range);
+
+    log('trace', 'Shortcut selected in Quill editor');
+  }
+
+  /**
+   * Try composition events for text replacement
+   */
+  private async tryCompositionEvents(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Attempting composition events');
+
+    try {
+      // Start composition
+      element.dispatchEvent(new CompositionEvent('compositionstart', {
+        bubbles: true,
+        cancelable: true,
+        data: ''
+      }));
+
+      // Update composition
+      element.dispatchEvent(new CompositionEvent('compositionupdate', {
+        bubbles: true,
+        cancelable: true,
+        data: content
+      }));
+
+      // End composition
+      element.dispatchEvent(new CompositionEvent('compositionend', {
+        bubbles: true,
+        cancelable: true,
+        data: content
+      }));
+
+      // Also dispatch input event
+      element.dispatchEvent(new InputEvent('input', {
+        inputType: 'insertCompositionText',
+        data: content,
+        bubbles: true,
+        cancelable: true
+      }));
+
+      // Wait for processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      return this.verifyContentReplacement(element, content);
+
+    } catch (error) {
+      log('trace', 'Composition events failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Try keyboard simulation for text replacement
+   */
+  private async tryKeyboardSimulation(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Attempting keyboard simulation');
+
+    try {
+      // Focus the element
+      element.focus();
+      
+      // Simulate typing each character
+      for (let i = 0; i < content.length; i++) {
+        const char = content[i];
+        
+        // Dispatch keydown
+        element.dispatchEvent(new KeyboardEvent('keydown', {
+          key: char,
+          bubbles: true,
+          cancelable: true
+        }));
+
+        // Dispatch keypress
+        element.dispatchEvent(new KeyboardEvent('keypress', {
+          key: char,
+          bubbles: true,
+          cancelable: true
+        }));
+
+        // Dispatch input
+        element.dispatchEvent(new InputEvent('input', {
+          inputType: 'insertText',
+          data: char,
+          bubbles: true,
+          cancelable: true
+        }));
+
+        // Dispatch keyup
+        element.dispatchEvent(new KeyboardEvent('keyup', {
+          key: char,
+          bubbles: true,
+          cancelable: true
+        }));
+
+        // Small delay between characters
+        if (i < content.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+      }
+
+      // Wait for processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      return this.verifyContentReplacement(element, content);
+
+    } catch (error) {
+      log('trace', 'Keyboard simulation failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Fallback to standard DOM replacement
+   */
+  private async tryStandardDOMReplacement(
+    element: HTMLElement,
+    content: string,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Using standard DOM replacement as fallback');
+
+    const lines = content.split('\n');
+    const maxAttempts = 3; // Fewer attempts for fallback
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      log('trace', `Standard DOM replacement attempt ${attempt}/${maxAttempts}`);
+
+      try {
+        // For Quill editors, we need to maintain proper paragraph structure
+        let newContent: string;
+        if (lines.length > 1) {
+          newContent = lines.map(line => 
+            line.trim() ? `<p>${line}</p>` : '<p><br></p>'
+          ).join('');
+        } else {
+          newContent = `<p>${content}</p>`;
+        }
+
+        // Apply the content
+        element.innerHTML = newContent;
+
+        // Trigger events
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Set cursor position
+        this.setCursorPosition(element, content.length);
+
+        // Wait and verify
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        const currentText = element.textContent || '';
+        const hasExpectedContent = content.split('\n').every(line => 
+          !line.trim() || currentText.includes(line.trim())
+        );
+
+        if (hasExpectedContent) {
+          log('info', `Standard DOM replacement succeeded on attempt ${attempt}`);
+          return;
+        }
+
+        log('trace', `Attempt ${attempt} failed - content not persisted`);
+
+      } catch (error) {
+        log('warn', `Standard DOM replacement attempt ${attempt} failed:`, error);
+      }
+
+      // Wait before next attempt
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+      }
+    }
+
+    log('warn', 'All standard DOM replacement attempts failed');
   }
 
   /**
