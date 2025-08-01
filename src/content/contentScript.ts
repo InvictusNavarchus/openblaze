@@ -382,7 +382,8 @@ class ContentScript {
       'fr-element', // Froala
       'note-editable', // Summernote
       'ace_editor', // ACE Editor
-      'CodeMirror' // CodeMirror
+      'CodeMirror', // CodeMirror
+      'ProseMirror' // ProseMirror
     ];
 
     const className = element.className || '';
@@ -407,10 +408,35 @@ class ContentScript {
     log('trace', 'Rich text editor detection:', {
       hasRichTextClass,
       parentHasRichTextClass,
-      className: className.slice(0, 100) // First 100 chars
+      className: className.slice(0, 100), // First 100 chars
+      isProseMirror: className.includes('ProseMirror')
     });
 
     return hasRichTextClass || parentHasRichTextClass;
+  }
+
+  /**
+   * Check if element is a ProseMirror editor specifically
+   */
+  private isProseMirrorEditor(element: HTMLElement): boolean {
+    const className = element.className || '';
+    const isProseMirror = className.includes('ProseMirror');
+    
+    // Also check parent elements
+    let parent = element.parentElement;
+    let parentIsProseMirror = false;
+    let depth = 0;
+    while (parent && depth < 3) {
+      const parentClassName = parent.className || '';
+      if (parentClassName.includes('ProseMirror')) {
+        parentIsProseMirror = true;
+        break;
+      }
+      parent = parent.parentElement;
+      depth++;
+    }
+    
+    return isProseMirror || parentIsProseMirror;
   }
 
   /**
@@ -868,6 +894,13 @@ class ContentScript {
     const { element } = context;
 
     try {
+      // Check if this is a ProseMirror editor - needs special handling
+      if (this.isProseMirrorEditor(element)) {
+        log('debug', 'Detected ProseMirror editor - using specialized approach');
+        await this.performProseMirrorReplacement(snippet, context, shortcut);
+        return;
+      }
+
       // First, select the shortcut text to be replaced
       await this.selectShortcutInComplexDOM(element, shortcut);
 
@@ -889,6 +922,126 @@ class ContentScript {
       log('error', 'Smart replacement failed:', error);
       log('debug', 'Falling back to direct replacement due to error');
       await this.performDirectReplacement(snippet, context, shortcut);
+    }
+  }
+
+  /**
+   * Specialized replacement for ProseMirror editors
+   */
+  private async performProseMirrorReplacement(
+    snippet: Snippet,
+    context: ExpansionContext,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Performing ProseMirror-specific replacement');
+
+    const { element } = context;
+
+    try {
+      // For ProseMirror, we need to work with its transaction system
+      // First, select the shortcut text
+      await this.selectShortcutInComplexDOM(element, shortcut);
+
+      // Try to trigger ProseMirror's input handling by simulating typing
+      await this.simulateTypingForProseMirror(element, snippet.content);
+
+    } catch (error) {
+      log('error', 'ProseMirror replacement failed:', error);
+      log('debug', 'Falling back to direct replacement');
+      await this.performDirectReplacement(snippet, context, shortcut);
+    }
+  }
+
+  /**
+   * Simulate typing for ProseMirror editors to properly trigger their input handling
+   */
+  private async simulateTypingForProseMirror(element: HTMLElement, content: string): Promise<void> {
+    log('debug', 'Simulating typing for ProseMirror editor');
+
+    try {
+      // Delete the selected text first with backspace
+      const deleteEvent = new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        code: 'Backspace',
+        bubbles: true,
+        cancelable: true
+      });
+      element.dispatchEvent(deleteEvent);
+
+      // Small delay to let ProseMirror process the deletion
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Now simulate typing the content character by character for simple content
+      // Or use paste for multi-line content
+      if (content.includes('\n')) {
+        // For multi-line content, try to use input event with proper data
+        const inputEvent = new InputEvent('input', {
+          inputType: 'insertText',
+          data: content,
+          bubbles: true,
+          cancelable: true
+        });
+        
+        const inputResult = element.dispatchEvent(inputEvent);
+        log('trace', `ProseMirror input event result: ${inputResult}`);
+
+        // If input event doesn't work, try paste approach
+        if (!inputResult) {
+          log('trace', 'Input event failed, trying paste approach for ProseMirror');
+          await this.performProseMirrorPaste(element, content);
+        }
+
+      } else {
+        // For single-line content, simulate typing
+        const inputEvent = new InputEvent('input', {
+          inputType: 'insertText',
+          data: content,
+          bubbles: true,
+          cancelable: true
+        });
+        
+        element.dispatchEvent(inputEvent);
+      }
+
+      log('debug', 'ProseMirror typing simulation completed');
+
+    } catch (error) {
+      log('error', 'Failed to simulate typing for ProseMirror:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Perform paste operation specifically for ProseMirror
+   */
+  private async performProseMirrorPaste(element: HTMLElement, content: string): Promise<void> {
+    log('debug', 'Performing ProseMirror-specific paste');
+
+    try {
+      // Create a properly formatted clipboard data transfer
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', content);
+      
+      // For multi-line content, also set HTML data with proper ProseMirror structure
+      const htmlContent = content.split('\n').map(line => `<p>${line}</p>`).join('');
+      clipboardData.setData('text/html', htmlContent);
+
+      // Create and dispatch paste event
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: clipboardData
+      });
+
+      const pasteResult = element.dispatchEvent(pasteEvent);
+      log('trace', `ProseMirror paste event result: ${pasteResult}`);
+
+      // Give ProseMirror time to process the paste
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+    } catch (error) {
+      log('error', 'ProseMirror paste failed:', error);
+      throw error;
     }
   }
 
@@ -966,17 +1119,206 @@ class ContentScript {
       return;
     }
 
+    // For rich text editors, try a more robust approach
+    if (this.isRichTextEditor(element)) {
+      log('debug', 'Using enhanced direct replacement for rich text editor');
+      await this.performEnhancedDirectReplacement(element, snippet.content, shortcut, shortcutStart);
+    } else {
+      // Standard direct replacement for simple elements
+      await this.performStandardDirectReplacement(element, text, cursorPosition, snippet.content, shortcut, shortcutStart);
+    }
+  }
+
+  /**
+   * Enhanced direct replacement for rich text editors that might override content
+   */
+  private async performEnhancedDirectReplacement(
+    element: HTMLElement,
+    content: string,
+    shortcut: string,
+    shortcutStart: number
+  ): Promise<void> {
+    log('debug', 'Performing enhanced direct replacement for rich text editor');
+
+    try {
+      // Step 1: Select the shortcut text precisely
+      await this.selectShortcutInComplexDOM(element, shortcut);
+
+      // Step 2: Use multiple strategies to ensure content sticks
+      
+      // Strategy A: Input event with proper timing
+      const inputSuccess = await this.tryInputEventReplacement(element, content);
+      
+      if (inputSuccess) {
+        log('debug', 'Input event replacement successful');
+        return;
+      }
+
+      // Strategy B: Direct DOM manipulation with mutation observer handling
+      log('debug', 'Input event failed, trying DOM manipulation with persistence');
+      await this.tryPersistentDOMReplacement(element, content, shortcut);
+
+    } catch (error) {
+      log('error', 'Enhanced direct replacement failed:', error);
+      
+      // Final fallback to standard replacement
+      const currentText = element.textContent || '';
+      const currentCursor = currentText.length;
+      await this.performStandardDirectReplacement(element, currentText, currentCursor, content, shortcut, shortcutStart);
+    }
+  }
+
+  /**
+   * Try using input events to replace content naturally
+   */
+  private async tryInputEventReplacement(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Attempting input event replacement');
+
+    try {
+      // Create input event that should be handled by the editor
+      const inputEvent = new InputEvent('input', {
+        inputType: 'insertText',
+        data: content,
+        bubbles: true,
+        cancelable: true
+      });
+
+      // Dispatch the event
+      const eventResult = element.dispatchEvent(inputEvent);
+      
+      // Give the editor time to process
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Check if the content was actually inserted
+      const currentContent = element.textContent || element.innerText || '';
+      const contentFound = currentContent.includes(content.substring(0, Math.min(20, content.length)));
+
+      log('trace', `Input event replacement result: ${eventResult}, content found: ${contentFound}`);
+      
+      return eventResult && contentFound;
+
+    } catch (error) {
+      log('trace', 'Input event replacement failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Try persistent DOM manipulation that resists being overwritten
+   */
+  private async tryPersistentDOMReplacement(element: HTMLElement, content: string, shortcut: string): Promise<void> {
+    log('trace', 'Attempting persistent DOM replacement');
+
+    // Temporarily disable mutation observer to avoid infinite loops
+    this.debouncedCheckExpansion.cancel();
+
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    const attemptReplacement = async (): Promise<boolean> => {
+      attempts++;
+      log('trace', `DOM replacement attempt ${attempts}/${maxAttempts}`);
+
+      try {
+        // Get current selection and replace selected text
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+          return false;
+        }
+
+        const range = selection.getRangeAt(0);
+        
+        // Delete selected content
+        range.deleteContents();
+
+        // For multi-line content, create proper DOM structure
+        if (content.includes('\n')) {
+          const lines = content.split('\n');
+          const fragment = document.createDocumentFragment();
+
+          lines.forEach((line, index) => {
+            if (index > 0) {
+              // Add line break
+              const br = document.createElement('br');
+              fragment.appendChild(br);
+            }
+            
+            // Add text node
+            const textNode = document.createTextNode(line);
+            fragment.appendChild(textNode);
+          });
+
+          range.insertNode(fragment);
+        } else {
+          // Single line - simple text node
+          const textNode = document.createTextNode(content);
+          range.insertNode(textNode);
+        }
+
+        // Position cursor at the end
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        return true;
+
+      } catch (error) {
+        log('trace', `DOM replacement attempt ${attempts} failed:`, error);
+        return false;
+      }
+    };
+
+    // Try replacement with retries in case the editor overwrites it
+    for (let i = 0; i < maxAttempts; i++) {
+      const success = await attemptReplacement();
+      
+      if (success) {
+        // Wait a bit to see if the editor overwrites our change
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Check if our content is still there
+        const currentContent = element.textContent || element.innerText || '';
+        if (currentContent.includes(content.substring(0, Math.min(20, content.length)))) {
+          log('debug', `Persistent DOM replacement successful on attempt ${i + 1}`);
+          return;
+        } else {
+          log('trace', `Content was overwritten after attempt ${i + 1}, retrying...`);
+        }
+      }
+
+      // Small delay before retry
+      if (i < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+
+    log('warn', 'All persistent DOM replacement attempts failed');
+  }
+
+  /**
+   * Standard direct replacement for simple elements
+   */
+  private async performStandardDirectReplacement(
+    element: HTMLElement,
+    text: string,
+    cursorPosition: number,
+    content: string,
+    shortcut: string,
+    shortcutStart: number
+  ): Promise<void> {
+    log('trace', 'Performing standard direct replacement');
+
     // Replace the shortcut with snippet content
     const textBefore = text.substring(0, shortcutStart);
     const textAfter = text.substring(cursorPosition);
-    const newText = textBefore + snippet.content + textAfter;
+    const newText = textBefore + content + textAfter;
 
     log('trace', 'Text replacement details:', {
       originalLength: text.length,
       newLength: newText.length,
       textBeforeLength: textBefore.length,
       textAfterLength: textAfter.length,
-      insertedContentLength: snippet.content.length
+      insertedContentLength: content.length
     });
 
     log('debug', 'Updating element text');
@@ -984,7 +1326,7 @@ class ContentScript {
     setElementText(element, newText);
 
     // Set cursor position after the inserted content
-    const newCursorPosition = shortcutStart + snippet.content.length;
+    const newCursorPosition = shortcutStart + content.length;
     log('trace', `Setting cursor position to: ${newCursorPosition}`);
     this.setCursorPosition(element, newCursorPosition);
   }

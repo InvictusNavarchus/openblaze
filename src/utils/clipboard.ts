@@ -204,43 +204,102 @@ export class ClipboardManager {
       // Small delay to ensure focus is set
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      // Try modern approach first, then fallback to execCommand
+      // Try multiple paste approaches for better compatibility
       let pasteSuccess = false;
       
-      if (navigator.clipboard && 'read' in navigator.clipboard) {
+      // Approach 1: Try keyboard event simulation (Ctrl+V)
+      if (!pasteSuccess) {
         try {
-          // Use modern clipboard API with paste event simulation
-          log('trace', 'Attempting modern clipboard paste simulation');
-          const clipboardData = await navigator.clipboard.read();
+          log('trace', 'Attempting keyboard paste simulation (Ctrl+V)');
           
-          // Create and dispatch paste event
-          const pasteEvent = new ClipboardEvent('paste', {
+          const keydownEvent = new KeyboardEvent('keydown', {
+            key: 'v',
+            code: 'KeyV',
+            ctrlKey: true,
             bubbles: true,
-            cancelable: true,
-            clipboardData: new DataTransfer()
+            cancelable: true
           });
           
-          // Add text data to clipboard event
-          pasteEvent.clipboardData?.setData('text/plain', textToInsert);
-          if (preserveFormatting) {
-            pasteEvent.clipboardData?.setData('text/html', textToInsert.replace(/\n/g, '<br>'));
+          const keyupEvent = new KeyboardEvent('keyup', {
+            key: 'v',
+            code: 'KeyV',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true
+          });
+          
+          element.dispatchEvent(keydownEvent);
+          element.dispatchEvent(keyupEvent);
+          
+          // Give it a moment to process
+          await new Promise(resolve => setTimeout(resolve, 50));
+          
+          // Check if content was pasted by comparing element content
+          const currentContent = element.textContent || element.innerText || '';
+          if (currentContent.includes(textToInsert.substring(0, Math.min(20, textToInsert.length)))) {
+            pasteSuccess = true;
+            log('trace', 'Keyboard paste simulation successful');
           }
           
-          const eventResult = element.dispatchEvent(pasteEvent);
-          pasteSuccess = eventResult;
-          log('trace', `Modern paste event result: ${eventResult}`);
-          
-        } catch (modernError) {
-          log('trace', 'Modern clipboard approach failed, falling back to execCommand');
+        } catch (keyboardError) {
+          log('trace', 'Keyboard paste simulation failed:', keyboardError);
         }
       }
       
-      // Fallback to execCommand if modern approach fails
-      if (!pasteSuccess) {
+      // Approach 2: Try modern clipboard API with paste event
+      if (!pasteSuccess && navigator.clipboard && 'read' in navigator.clipboard) {
+        try {
+          log('trace', 'Attempting modern clipboard paste event');
+          
+          // Create and dispatch paste event with proper data
+          const clipboardData = new DataTransfer();
+          clipboardData.setData('text/plain', textToInsert);
+          
+          if (preserveFormatting) {
+            // Convert newlines to HTML for rich text editors
+            const htmlContent = textToInsert.replace(/\n/g, '<br>');
+            clipboardData.setData('text/html', htmlContent);
+          }
+          
+          const pasteEvent = new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: clipboardData
+          });
+          
+          const eventResult = element.dispatchEvent(pasteEvent);
+          log('trace', `Modern paste event dispatched: ${eventResult}`);
+          
+          // Give the event time to be processed
+          await new Promise(resolve => setTimeout(resolve, 50));
+          
+          // Check if paste was successful
+          const currentContent = element.textContent || element.innerText || '';
+          if (currentContent.includes(textToInsert.substring(0, Math.min(20, textToInsert.length)))) {
+            pasteSuccess = true;
+            log('trace', 'Modern paste event successful');
+          }
+          
+        } catch (modernError) {
+          log('trace', 'Modern clipboard paste failed:', modernError);
+        }
+      }
+      
+      // Approach 3: Fallback to execCommand if available
+      if (!pasteSuccess && document.queryCommandSupported && document.queryCommandSupported('paste')) {
         try {
           log('trace', 'Using execCommand paste fallback');
-          pasteSuccess = document.execCommand('paste');
-          log('trace', `execCommand paste result: ${pasteSuccess}`);
+          const execResult = document.execCommand('paste');
+          log('trace', `execCommand paste result: ${execResult}`);
+          
+          if (execResult) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            const currentContent = element.textContent || element.innerText || '';
+            if (currentContent.includes(textToInsert.substring(0, Math.min(20, textToInsert.length)))) {
+              pasteSuccess = true;
+              log('trace', 'execCommand paste successful');
+            }
+          }
         } catch (execError) {
           log('warn', 'execCommand paste failed:', execError);
         }
@@ -261,7 +320,7 @@ export class ClipboardManager {
         log('info', 'Smart clipboard insertion completed successfully');
         return true;
       } else {
-        log('warn', 'Smart clipboard insertion failed - paste operation unsuccessful');
+        log('warn', 'All clipboard paste approaches failed');
         return false;
       }
 
