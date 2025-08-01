@@ -938,12 +938,29 @@ class ContentScript {
     const { element } = context;
 
     try {
-      // For ProseMirror, we need to work with its transaction system
-      // First, select the shortcut text
+      // For ProseMirror, we need to be more aggressive about text replacement
+      // and work around ProseMirror's state management
+      
+      // Step 1: Select the shortcut text
       await this.selectShortcutInComplexDOM(element, shortcut);
-
-      // Try to trigger ProseMirror's input handling by simulating typing
-      await this.simulateTypingForProseMirror(element, snippet.content);
+      
+      // Step 2: Try multiple approaches for content insertion
+      let success = false;
+      
+      // Approach 1: Try proper ProseMirror input events
+      success = await this.tryProseMirrorInputEvents(element, snippet.content);
+      
+      if (!success) {
+        log('debug', 'ProseMirror input events failed, trying clipboard approach');
+        // Approach 2: Enhanced clipboard approach with retries
+        success = await this.tryProseMirrorClipboardInsertion(element, snippet.content);
+      }
+      
+      if (!success) {
+        log('debug', 'ProseMirror clipboard failed, trying DOM manipulation with persistence');
+        // Approach 3: Direct DOM manipulation with persistence
+        await this.tryPersistentProseMirrorReplacement(element, snippet.content, shortcut);
+      }
 
     } catch (error) {
       log('error', 'ProseMirror replacement failed:', error);
@@ -953,80 +970,84 @@ class ContentScript {
   }
 
   /**
-   * Simulate typing for ProseMirror editors to properly trigger their input handling
+   * Try ProseMirror-compatible input events
    */
-  private async simulateTypingForProseMirror(element: HTMLElement, content: string): Promise<void> {
-    log('debug', 'Simulating typing for ProseMirror editor');
+  private async tryProseMirrorInputEvents(element: HTMLElement, content: string): Promise<boolean> {
+    log('debug', 'Trying ProseMirror input events');
 
     try {
-      // Delete the selected text first with backspace
-      const deleteEvent = new KeyboardEvent('keydown', {
-        key: 'Backspace',
-        code: 'Backspace',
+      // First delete the selected text with a beforeinput event
+      const deleteEvent = new InputEvent('beforeinput', {
+        inputType: 'deleteContentBackward',
         bubbles: true,
         cancelable: true
       });
-      element.dispatchEvent(deleteEvent);
-
-      // Small delay to let ProseMirror process the deletion
+      
+      const deleteResult = element.dispatchEvent(deleteEvent);
+      log('trace', `ProseMirror delete beforeinput result: ${deleteResult}`);
+      
+      // Small delay for processing
       await new Promise(resolve => setTimeout(resolve, 10));
-
-      // Now simulate typing the content character by character for simple content
-      // Or use paste for multi-line content
-      if (content.includes('\n')) {
-        // For multi-line content, try to use input event with proper data
-        const inputEvent = new InputEvent('input', {
-          inputType: 'insertText',
-          data: content,
-          bubbles: true,
-          cancelable: true
-        });
-        
-        const inputResult = element.dispatchEvent(inputEvent);
-        log('trace', `ProseMirror input event result: ${inputResult}`);
-
-        // If input event doesn't work, try paste approach
-        if (!inputResult) {
-          log('trace', 'Input event failed, trying paste approach for ProseMirror');
-          await this.performProseMirrorPaste(element, content);
-        }
-
-      } else {
-        // For single-line content, simulate typing
-        const inputEvent = new InputEvent('input', {
-          inputType: 'insertText',
-          data: content,
-          bubbles: true,
-          cancelable: true
-        });
-        
-        element.dispatchEvent(inputEvent);
-      }
-
-      log('debug', 'ProseMirror typing simulation completed');
+      
+      // Then insert the new content
+      const insertEvent = new InputEvent('beforeinput', {
+        inputType: 'insertText',
+        data: content,
+        bubbles: true,
+        cancelable: true
+      });
+      
+      const insertResult = element.dispatchEvent(insertEvent);
+      log('trace', `ProseMirror insert beforeinput result: ${insertResult}`);
+      
+      // Follow up with regular input event
+      const inputEvent = new InputEvent('input', {
+        inputType: 'insertText',
+        data: content,
+        bubbles: true,
+        cancelable: true
+      });
+      
+      element.dispatchEvent(inputEvent);
+      
+      // Wait a bit and check if content was actually inserted
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      const currentContent = element.textContent || '';
+      const hasExpectedContent = currentContent.includes(content.replace(/\n/g, ''));
+      
+      log('debug', `ProseMirror input events - Content check: ${hasExpectedContent}`, {
+        expectedContent: content.slice(0, 50),
+        actualContent: currentContent.slice(0, 50)
+      });
+      
+      return hasExpectedContent;
 
     } catch (error) {
-      log('error', 'Failed to simulate typing for ProseMirror:', error);
-      throw error;
+      log('warn', 'ProseMirror input events failed:', error);
+      return false;
     }
   }
 
   /**
-   * Perform paste operation specifically for ProseMirror
+   * Try enhanced clipboard insertion for ProseMirror
    */
-  private async performProseMirrorPaste(element: HTMLElement, content: string): Promise<void> {
-    log('debug', 'Performing ProseMirror-specific paste');
+  private async tryProseMirrorClipboardInsertion(element: HTMLElement, content: string): Promise<boolean> {
+    log('debug', 'Trying enhanced ProseMirror clipboard insertion');
 
     try {
-      // Create a properly formatted clipboard data transfer
+      // Create proper HTML structure for ProseMirror
+      const lines = content.split('\n');
+      const htmlContent = lines.map(line => 
+        line.trim() ? `<p>${line}</p>` : '<p><br></p>'
+      ).join('');
+      
+      // Create DataTransfer with both plain text and HTML
       const clipboardData = new DataTransfer();
       clipboardData.setData('text/plain', content);
-      
-      // For multi-line content, also set HTML data with proper ProseMirror structure
-      const htmlContent = content.split('\n').map(line => `<p>${line}</p>`).join('');
       clipboardData.setData('text/html', htmlContent);
-
-      // Create and dispatch paste event
+      
+      // Dispatch paste event
       const pasteEvent = new ClipboardEvent('paste', {
         bubbles: true,
         cancelable: true,
@@ -1034,15 +1055,115 @@ class ContentScript {
       });
 
       const pasteResult = element.dispatchEvent(pasteEvent);
-      log('trace', `ProseMirror paste event result: ${pasteResult}`);
+      log('trace', `ProseMirror enhanced paste result: ${pasteResult}`);
 
-      // Give ProseMirror time to process the paste
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for ProseMirror to process
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Verify content was inserted
+      const currentContent = element.textContent || '';
+      const hasExpectedContent = content.split('\n').every(line => 
+        !line.trim() || currentContent.includes(line.trim())
+      );
+
+      log('debug', `ProseMirror clipboard insertion - Content check: ${hasExpectedContent}`);
+      return hasExpectedContent;
 
     } catch (error) {
-      log('error', 'ProseMirror paste failed:', error);
-      throw error;
+      log('warn', 'ProseMirror clipboard insertion failed:', error);
+      return false;
     }
+  }
+
+  /**
+   * Try persistent DOM replacement for ProseMirror with retries
+   */
+  private async tryPersistentProseMirrorReplacement(
+    element: HTMLElement, 
+    content: string, 
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Trying persistent ProseMirror DOM replacement');
+
+    // Cancel any pending expansion checks to avoid interference
+    this.debouncedCheckExpansion.cancel();
+
+    const lines = content.split('\n');
+    const maxAttempts = 5;
+    let attempt = 0;
+
+    const attemptReplacement = async (): Promise<boolean> => {
+      attempt++;
+      log('trace', `ProseMirror DOM replacement attempt ${attempt}/${maxAttempts}`);
+
+      try {
+        // Create the proper ProseMirror structure
+        if (lines.length > 1) {
+          // Multi-line content - create paragraph elements
+          const paragraphs = lines.map(line => {
+            const p = document.createElement('p');
+            if (line.trim()) {
+              p.textContent = line;
+            } else {
+              p.appendChild(document.createElement('br'));
+            }
+            return p;
+          });
+
+          // Clear the element and add paragraphs
+          element.innerHTML = '';
+          paragraphs.forEach(p => element.appendChild(p));
+
+        } else {
+          // Single line content
+          element.innerHTML = `<p>${content}</p>`;
+        }
+
+        // Set cursor position after the content
+        this.setCursorPosition(element, content.length);
+
+        // Trigger change events to notify ProseMirror
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Wait a bit and verify the content persists
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        const currentContent = element.textContent || '';
+        const hasExpectedContent = content.split('\n').every(line => 
+          !line.trim() || currentContent.includes(line.trim())
+        );
+
+        log('trace', `Attempt ${attempt} - Content persisted: ${hasExpectedContent}`, {
+          expected: content.slice(0, 50),
+          actual: currentContent.slice(0, 50)
+        });
+
+        return hasExpectedContent;
+
+      } catch (error) {
+        log('warn', `ProseMirror DOM replacement attempt ${attempt} failed:`, error);
+        return false;
+      }
+    };
+
+    // Try multiple times with increasing delays
+    for (let i = 0; i < maxAttempts; i++) {
+      const success = await attemptReplacement();
+      if (success) {
+        log('info', `ProseMirror persistent replacement succeeded on attempt ${i + 1}`);
+        return;
+      }
+      
+      // Wait before next attempt, with exponential backoff
+      if (i < maxAttempts - 1) {
+        const delay = Math.min(50 * Math.pow(2, i), 500);
+        log('trace', `Waiting ${delay}ms before next attempt`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    log('warn', 'All ProseMirror persistent replacement attempts failed');
   }
 
   /**
