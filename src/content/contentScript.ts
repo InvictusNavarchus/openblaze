@@ -1111,9 +1111,14 @@ class ContentScript {
    */
   private verifyContentReplacement(element: HTMLElement, expectedContent: string): boolean {
     const currentContent = element.textContent || '';
-    const cleanExpectedContent = expectedContent.replace(/\n/g, '');
     
-    // Check if content was inserted
+    // For multi-line content, we need to check differently
+    if (expectedContent.includes('\n')) {
+      return this.verifyMultiLineContent(element, expectedContent, currentContent);
+    }
+    
+    // Single line verification
+    const cleanExpectedContent = expectedContent.replace(/\n/g, '');
     const hasExpectedContent = currentContent.includes(cleanExpectedContent);
     
     // Special case: if content is completely empty but we expected something,
@@ -1136,6 +1141,65 @@ class ContentScript {
     }
     
     return hasExpectedContent;
+  }
+
+  /**
+   * Verify multi-line content replacement in rich text editors
+   */
+  private verifyMultiLineContent(element: HTMLElement, expectedContent: string, currentContent: string): boolean {
+    const expectedLines = expectedContent.split('\n');
+    
+    // For rich text editors, check if we have the expected structure
+    // This could be paragraphs, divs, or other line representations
+    const innerHTML = element.innerHTML;
+    
+    log('trace', 'Multi-line verification:', {
+      expectedLines: expectedLines.length,
+      currentContent: currentContent.slice(0, 100),
+      innerHTML: innerHTML.slice(0, 200)
+    });
+
+    // Check if all expected lines are present in the content
+    let hasAllLines = true;
+    let linesFound = 0;
+    
+    for (const line of expectedLines) {
+      if (line.trim()) { // Only check non-empty lines
+        if (currentContent.includes(line.trim())) {
+          linesFound++;
+        } else {
+          hasAllLines = false;
+          break;
+        }
+      } else {
+        // For empty lines, we expect some line break representation
+        linesFound++; // Count empty lines as found for now
+      }
+    }
+
+    // For Quill editors, also check if we have proper paragraph structure
+    if (this.isQuillEditor(element)) {
+      const paragraphs = element.querySelectorAll('p');
+      const hasExpectedParagraphs = paragraphs.length >= expectedLines.filter(line => line.trim()).length;
+      
+      log('trace', 'Quill structure verification:', {
+        paragraphCount: paragraphs.length,
+        expectedNonEmptyLines: expectedLines.filter(line => line.trim()).length,
+        hasExpectedParagraphs
+      });
+      
+      // For Quill, we need both content and structure
+      hasAllLines = hasAllLines && hasExpectedParagraphs;
+    }
+
+    log('debug', `Multi-line content verification: ${hasAllLines}`, {
+      expectedLines: expectedLines.length,
+      linesFound,
+      hasAllLines,
+      isQuillEditor: this.isQuillEditor(element)
+    });
+
+    return hasAllLines;
   }
 
   /**
@@ -1423,18 +1487,42 @@ class ContentScript {
         currentTextLength: currentText.length,
         shortcutIndex,
         shortcutLength: shortcut.length,
-        contentLength: content.length
+        contentLength: content.length,
+        hasNewlines: content.includes('\n')
       });
 
       // Delete the shortcut text
       quill.deleteText(shortcutIndex, shortcut.length);
       
-      // Insert the new content
-      quill.insertText(shortcutIndex, content);
-      
-      // Set cursor position after the inserted content
-      const newPosition = shortcutIndex + content.length;
-      quill.setSelection(newPosition, 0);
+      // For multi-line content, we need to handle it specially in Quill
+      if (content.includes('\n')) {
+        const lines = content.split('\n');
+        let insertPosition = shortcutIndex;
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          
+          if (i > 0) {
+            // Insert a line break before each new line (except the first)
+            quill.insertText(insertPosition, '\n');
+            insertPosition += 1;
+          }
+          
+          // Insert the line content
+          if (line) {
+            quill.insertText(insertPosition, line);
+            insertPosition += line.length;
+          }
+        }
+        
+        // Set cursor position after all inserted content
+        quill.setSelection(insertPosition, 0);
+      } else {
+        // Single line content
+        quill.insertText(shortcutIndex, content);
+        const newPosition = shortcutIndex + content.length;
+        quill.setSelection(newPosition, 0);
+      }
 
       log('info', 'Quill API replacement completed successfully');
 
@@ -1466,9 +1554,8 @@ class ContentScript {
 
       // Approach 1: Use document.execCommand (still works in some cases)
       if (!success && document.queryCommandSupported('insertText')) {
-        log('trace', 'Trying execCommand insertText');
-        success = document.execCommand('insertText', false, content);
-        log('trace', `execCommand result: ${success}`);
+        log('trace', 'Trying execCommand with proper newline handling');
+        success = await this.tryExecCommandWithNewlines(element, content);
         
         if (success) {
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -1672,6 +1759,64 @@ class ContentScript {
   }
 
   /**
+   * Try execCommand with proper newline handling for rich text editors
+   */
+  private async tryExecCommandWithNewlines(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Attempting execCommand with newline handling');
+
+    try {
+      const lines = content.split('\n');
+      
+      if (lines.length === 1) {
+        // Single line - use simple execCommand
+        const result = document.execCommand('insertText', false, content);
+        log('trace', `Single line execCommand result: ${result}`);
+        return result;
+      }
+
+      // Multi-line content - handle each line separately
+      log('debug', `Handling ${lines.length} lines with execCommand`);
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        if (i > 0) {
+          // Insert line break for subsequent lines
+          if (document.queryCommandSupported('insertLineBreak')) {
+            const lineBreakResult = document.execCommand('insertLineBreak', false);
+            log('trace', `Line break insertion result: ${lineBreakResult}`);
+          } else {
+            // Fallback: try to insert paragraph
+            const enterResult = document.execCommand('insertParagraph', false);
+            log('trace', `Paragraph insertion result: ${enterResult}`);
+          }
+          
+          // Small delay between line break and content
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        
+        // Insert the line content (even if empty)
+        if (line || i === 0) { // Always insert first line, even if empty
+          const textResult = document.execCommand('insertText', false, line);
+          log('trace', `Line ${i + 1} text insertion result: ${textResult} (content: "${line}")`);
+        }
+        
+        // Small delay between lines
+        if (i < lines.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 30));
+        }
+      }
+
+      log('info', 'Multi-line execCommand insertion completed');
+      return true;
+
+    } catch (error) {
+      log('trace', 'execCommand with newlines failed:', error);
+      return false;
+    }
+  }
+
+  /**
    * Fallback to standard DOM replacement
    */
   private async tryStandardDOMReplacement(
@@ -1811,18 +1956,46 @@ class ContentScript {
         
         // For newlines, handle specially
         if (char === '\n') {
-          // Simulate Enter key press
-          const enterEvent = new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            bubbles: true,
-            cancelable: true
-          });
+          // Try multiple approaches for line breaks
+          let lineBreakSuccess = false;
           
-          element.dispatchEvent(enterEvent);
+          // Approach 1: Use execCommand for line break
+          if (!lineBreakSuccess && document.queryCommandSupported('insertLineBreak')) {
+            lineBreakSuccess = document.execCommand('insertLineBreak', false);
+            log('trace', `Line break via execCommand: ${lineBreakSuccess}`);
+          }
+          
+          // Approach 2: Use execCommand for paragraph
+          if (!lineBreakSuccess && document.queryCommandSupported('insertParagraph')) {
+            lineBreakSuccess = document.execCommand('insertParagraph', false);
+            log('trace', `Paragraph via execCommand: ${lineBreakSuccess}`);
+          }
+          
+          // Approach 3: Simulate Enter key press
+          if (!lineBreakSuccess) {
+            const enterEvent = new KeyboardEvent('keydown', {
+              key: 'Enter',
+              code: 'Enter',
+              bubbles: true,
+              cancelable: true
+            });
+            
+            element.dispatchEvent(enterEvent);
+            
+            // Also dispatch keyup
+            element.dispatchEvent(new KeyboardEvent('keyup', {
+              key: 'Enter',
+              code: 'Enter',
+              bubbles: true,
+              cancelable: true
+            }));
+            
+            log('trace', 'Line break via Enter key simulation');
+          }
           
           // Wait longer for newlines as they might trigger more processing
           await new Promise(resolve => setTimeout(resolve, 200));
+          
         } else {
           // Insert regular character using multiple event types
           
