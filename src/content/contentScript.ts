@@ -961,6 +961,29 @@ class ContentScript {
     log('debug', 'Trying modern input events for text replacement');
 
     try {
+      // Try beforeinput events first (more modern approach)
+      let success = await this.tryBeforeInputEvents(element, content);
+      
+      if (!success) {
+        log('debug', 'beforeinput events failed, trying regular input events');
+        success = await this.tryRegularInputEvents(element, content);
+      }
+
+      return success;
+
+    } catch (error) {
+      log('warn', 'Modern input events failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Try beforeinput events (more modern, better support for rich text editors)
+   */
+  private async tryBeforeInputEvents(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Attempting beforeinput events approach');
+
+    try {
       // First delete the selected text with a beforeinput event
       const deleteEvent = new InputEvent('beforeinput', {
         inputType: 'deleteContentBackward',
@@ -971,8 +994,14 @@ class ContentScript {
       const deleteResult = element.dispatchEvent(deleteEvent);
       log('trace', `Delete beforeinput result: ${deleteResult}`);
       
+      // Only proceed with insertion if deletion was handled
+      if (!deleteResult) {
+        log('trace', 'Delete beforeinput was cancelled/not handled');
+        return false;
+      }
+      
       // Small delay for processing
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // Then insert the new content
       const insertEvent = new InputEvent('beforeinput', {
@@ -985,7 +1014,37 @@ class ContentScript {
       const insertResult = element.dispatchEvent(insertEvent);
       log('trace', `Insert beforeinput result: ${insertResult}`);
       
-      // Follow up with regular input event
+      // If the beforeinput was not handled properly, return false
+      if (!insertResult) {
+        log('trace', 'Insert beforeinput was cancelled/not handled');
+        return false;
+      }
+
+      // Clear any text selection to prevent interference
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+      }
+      
+      // Wait for editor to process changes
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      return this.verifyContentReplacement(element, content);
+
+    } catch (error) {
+      log('trace', 'beforeinput events failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Try regular input events (fallback approach)
+   */
+  private async tryRegularInputEvents(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Attempting regular input events approach');
+
+    try {
+      // Dispatch only a single input event
       const inputEvent = new InputEvent('input', {
         inputType: 'insertText',
         data: content,
@@ -993,40 +1052,56 @@ class ContentScript {
         cancelable: true
       });
       
-      element.dispatchEvent(inputEvent);
-      
+      const result = element.dispatchEvent(inputEvent);
+      log('trace', `Regular input event result: ${result}`);
+
       // Clear any text selection to prevent interference
       const selection = window.getSelection();
       if (selection) {
         selection.removeAllRanges();
       }
       
-      // Wait longer for editor to process changes, especially for complex editors like Lexical
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Wait for editor to process
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      const currentContent = element.textContent || '';
-      const expectedContent = content.replace(/\n/g, '');
-      
-      // More robust content verification - check if content was replaced correctly
-      // without duplication or partial replacement
-      const hasExpectedContent = currentContent.includes(expectedContent);
-      const hasUnexpectedDuplication = currentContent.includes(expectedContent + expectedContent);
-      const isContentCorrect = hasExpectedContent && !hasUnexpectedDuplication;
-      
-      log('debug', `Modern input events - Content check: ${isContentCorrect}`, {
-        expectedContent: expectedContent.slice(0, 50),
-        actualContent: currentContent.slice(0, 100),
-        hasExpectedContent,
-        hasUnexpectedDuplication,
-        isContentCorrect
-      });
-      
-      return isContentCorrect;
+      return this.verifyContentReplacement(element, content);
 
     } catch (error) {
-      log('warn', 'Modern input events failed:', error);
+      log('trace', 'Regular input events failed:', error);
       return false;
     }
+  }
+
+  /**
+   * Verify that content was replaced correctly without duplication
+   */
+  private verifyContentReplacement(element: HTMLElement, expectedContent: string): boolean {
+    const currentContent = element.textContent || '';
+    const cleanExpectedContent = expectedContent.replace(/\n/g, '');
+    
+    // Check if content was inserted
+    const hasExpectedContent = currentContent.includes(cleanExpectedContent);
+    
+    // Check for duplication by looking for the content appearing twice consecutively
+    const duplicatedPattern = cleanExpectedContent + cleanExpectedContent;
+    const hasUnexpectedDuplication = currentContent.includes(duplicatedPattern);
+    
+    // Also check for space-separated duplication (like "test snippet test snippet")
+    const spaceSeparatedDuplication = cleanExpectedContent + ' ' + cleanExpectedContent;
+    const hasSpaceSeparatedDuplication = currentContent.includes(spaceSeparatedDuplication);
+    
+    const isContentCorrect = hasExpectedContent && !hasUnexpectedDuplication && !hasSpaceSeparatedDuplication;
+    
+    log('debug', `Content verification: ${isContentCorrect}`, {
+      expectedContent: cleanExpectedContent.slice(0, 50),
+      actualContent: currentContent.slice(0, 100),
+      hasExpectedContent,
+      hasUnexpectedDuplication,
+      hasSpaceSeparatedDuplication,
+      isContentCorrect
+    });
+    
+    return isContentCorrect;
   }
 
   /**
@@ -1233,35 +1308,48 @@ class ContentScript {
         throw new Error('No selection API available');
       }
 
+      // Clear any existing selection first
+      selection.removeAllRanges();
+
       // Find the shortcut text and select it
       const range = document.createRange();
       const textNodes = this.getTextNodes(element);
       
       log('trace', `Searching for shortcut in ${textNodes.length} text nodes`);
 
-      for (const textNode of textNodes) {
+      // Search from the end to find the most recent occurrence
+      for (let i = textNodes.length - 1; i >= 0; i--) {
+        const textNode = textNodes[i];
         const textContent = textNode.textContent || '';
         const shortcutIndex = textContent.lastIndexOf(shortcut);
         
         if (shortcutIndex !== -1) {
-          // Check if it's at a word boundary
+          // Verify this is the shortcut we want by checking word boundaries
           const beforeChar = shortcutIndex > 0 ? textContent[shortcutIndex - 1] : ' ';
           const afterChar = shortcutIndex + shortcut.length < textContent.length 
             ? textContent[shortcutIndex + shortcut.length] 
             : ' ';
           
-          if (/\s/.test(beforeChar) || /\s/.test(afterChar) || shortcutIndex === 0) {
+          const isAtWordBoundary = /\s/.test(beforeChar) || /\s/.test(afterChar) || shortcutIndex === 0;
+          
+          if (isAtWordBoundary) {
             log('debug', `Found shortcut in text node at index ${shortcutIndex}`);
             
-            // Select the shortcut text
+            // Select exactly the shortcut text
             range.setStart(textNode, shortcutIndex);
             range.setEnd(textNode, shortcutIndex + shortcut.length);
             
-            selection.removeAllRanges();
             selection.addRange(range);
             
-            log('trace', 'Shortcut text selected successfully');
-            return;
+            // Verify the selection was made correctly
+            const selectedText = selection.toString();
+            if (selectedText === shortcut) {
+              log('trace', 'Shortcut text selected successfully');
+              return;
+            } else {
+              log('warn', `Selection mismatch: expected "${shortcut}", got "${selectedText}"`);
+              selection.removeAllRanges();
+            }
           }
         }
       }
