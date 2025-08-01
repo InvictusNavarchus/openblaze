@@ -943,6 +943,10 @@ class ContentScript {
       return;
     }
 
+    // Store original content to detect aggressive clearing
+    const originalContent = element.textContent || '';
+    log('trace', 'Original content before replacement:', originalContent);
+
     try {
       // Step 1: Select the shortcut text to be replaced
       await this.selectShortcutInComplexDOM(element, shortcut);
@@ -963,6 +967,18 @@ class ContentScript {
         log('debug', 'Clipboard approach failed, trying persistent DOM manipulation');
         // Approach 3: Direct DOM manipulation with persistence and retries
         await this.tryPersistentDOMReplacement(element, snippet.content, shortcut);
+        
+        // Check if content was completely cleared (Gemini behavior)
+        const finalContent = element.textContent || '';
+        if (finalContent.trim() === '' && snippet.content.trim() !== '') {
+          log('warn', 'Content was completely cleared - this indicates aggressive editor override');
+          
+          // If this is a Quill editor (like Gemini), try specialized recovery
+          if (this.isQuillEditor(element)) {
+            log('debug', 'Detected content clearing in Quill editor - attempting recovery');
+            await this.tryGeminiRecoveryStrategy(element, snippet.content, shortcut);
+          }
+        }
       }
 
     } catch (error) {
@@ -1100,11 +1116,24 @@ class ContentScript {
     // Check if content was inserted
     const hasExpectedContent = currentContent.includes(cleanExpectedContent);
     
+    // Special case: if content is completely empty but we expected something,
+    // this might be due to aggressive editor clearing (like Gemini)
+    const isContentCleared = currentContent.trim() === '' && cleanExpectedContent.trim() !== '';
+    
     log('debug', `Content verification: ${hasExpectedContent}`, {
       expectedContent: cleanExpectedContent.slice(0, 50),
       actualContent: currentContent.slice(0, 100),
-      hasExpectedContent
+      hasExpectedContent,
+      isContentCleared,
+      expectedLength: cleanExpectedContent.length,
+      actualLength: currentContent.length
     });
+    
+    // If content was cleared, we consider this a failure that needs special handling
+    if (isContentCleared) {
+      log('warn', 'Content was completely cleared by editor - this indicates aggressive override');
+      return false;
+    }
     
     return hasExpectedContent;
   }
@@ -1322,9 +1351,10 @@ class ContentScript {
 
     } catch (error) {
       log('error', 'Quill editor replacement failed:', error);
-      // Fallback to standard DOM replacement
-      log('debug', 'Falling back to standard DOM replacement');
-      await this.tryStandardDOMReplacement(element, content, shortcut);
+      
+      // Special handling for Gemini's aggressive content clearing
+      log('debug', 'Attempting Gemini-specific recovery strategy');
+      await this.tryGeminiRecoveryStrategy(element, content, shortcut);
     }
   }
 
@@ -1704,6 +1734,264 @@ class ContentScript {
     }
 
     log('warn', 'All standard DOM replacement attempts failed');
+  }
+
+  /**
+   * Special recovery strategy for Gemini's aggressive content clearing
+   * This method tries to work with Gemini's behavior rather than against it
+   */
+  private async tryGeminiRecoveryStrategy(
+    element: HTMLElement,
+    content: string,
+    shortcut: string
+  ): Promise<void> {
+    log('debug', 'Attempting Gemini-specific recovery strategy');
+
+    try {
+      // Strategy 1: Wait for Gemini to finish its clearing, then insert
+      log('trace', 'Waiting for Gemini content clearing to settle');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Check if element is still the focus target
+      if (document.activeElement !== element) {
+        log('debug', 'Element lost focus - refocusing');
+        element.focus();
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Strategy 2: Use very slow, character-by-character insertion
+      log('debug', 'Attempting slow character-by-character insertion');
+      const success = await this.trySlowCharacterInsertion(element, content);
+      
+      if (success) {
+        log('info', 'Gemini recovery strategy succeeded with slow insertion');
+        return;
+      }
+
+      // Strategy 3: Try clipboard with user-like timing
+      log('debug', 'Attempting clipboard with human-like timing');
+      await this.tryHumanLikeClipboardInsertion(element, content);
+
+    } catch (error) {
+      log('error', 'Gemini recovery strategy failed:', error);
+      
+      // Last resort: show user notification about the issue
+      this.showGeminiCompatibilityNotice();
+    }
+  }
+
+  /**
+   * Try inserting text very slowly to avoid triggering Gemini's content clearing
+   */
+  private async trySlowCharacterInsertion(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Starting slow character insertion');
+
+    try {
+      // Clear any existing selection
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+      }
+
+      // Focus the element and set cursor at the end
+      element.focus();
+      const range = document.createRange();
+      const textNodes = this.getTextNodes(element);
+      
+      if (textNodes.length > 0) {
+        const lastTextNode = textNodes[textNodes.length - 1];
+        range.setStart(lastTextNode, lastTextNode.textContent?.length || 0);
+        range.collapse(true);
+        selection?.addRange(range);
+      }
+
+      // Insert each character with significant delay
+      for (let i = 0; i < content.length; i++) {
+        const char = content[i];
+        
+        // For newlines, handle specially
+        if (char === '\n') {
+          // Simulate Enter key press
+          const enterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            bubbles: true,
+            cancelable: true
+          });
+          
+          element.dispatchEvent(enterEvent);
+          
+          // Wait longer for newlines as they might trigger more processing
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } else {
+          // Insert regular character using multiple event types
+          
+          // Keydown
+          element.dispatchEvent(new KeyboardEvent('keydown', {
+            key: char,
+            code: `Key${char.toUpperCase()}`,
+            bubbles: true,
+            cancelable: true
+          }));
+
+          // Input event
+          element.dispatchEvent(new InputEvent('input', {
+            inputType: 'insertText',
+            data: char,
+            bubbles: true,
+            cancelable: true
+          }));
+
+          // Keyup
+          element.dispatchEvent(new KeyboardEvent('keyup', {
+            key: char,
+            code: `Key${char.toUpperCase()}`,
+            bubbles: true,
+            cancelable: true
+          }));
+
+          // Wait between characters
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        // Check if content is being cleared
+        const currentContent = element.textContent || '';
+        if (i > 5 && currentContent.length === 0) {
+          log('warn', 'Content being cleared during slow insertion - aborting');
+          return false;
+        }
+      }
+
+      // Wait and verify final content
+      await new Promise(resolve => setTimeout(resolve, 300));
+      return this.verifyContentReplacement(element, content);
+
+    } catch (error) {
+      log('trace', 'Slow character insertion failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Try clipboard insertion with human-like timing and behavior
+   */
+  private async tryHumanLikeClipboardInsertion(element: HTMLElement, content: string): Promise<boolean> {
+    log('trace', 'Attempting human-like clipboard insertion');
+
+    try {
+      // Wait for any ongoing operations to complete
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Focus element
+      element.focus();
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Select all existing content first (like a user would)
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        selection.addRange(range);
+        
+        // Wait a bit for selection to be recognized
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+
+      // Create clipboard data
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', content);
+      
+      // Handle multi-line content for Quill
+      if (content.includes('\n')) {
+        const lines = content.split('\n');
+        const htmlContent = lines.map(line => 
+          line.trim() ? `<p>${line}</p>` : '<p><br></p>'
+        ).join('');
+        clipboardData.setData('text/html', htmlContent);
+      }
+
+      // Dispatch paste event
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: clipboardData
+      });
+
+      const result = element.dispatchEvent(pasteEvent);
+      log('trace', `Human-like paste event result: ${result}`);
+
+      // Wait longer for processing
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Clear selection
+      if (selection) {
+        selection.removeAllRanges();
+      }
+
+      return this.verifyContentReplacement(element, content);
+
+    } catch (error) {
+      log('trace', 'Human-like clipboard insertion failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Show a compatibility notice for Gemini users
+   */
+  private showGeminiCompatibilityNotice(): void {
+    log('debug', 'Showing Gemini compatibility notice');
+
+    const notification = document.createElement('div');
+    notification.className = 'openblaze-gemini-notice';
+    notification.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 18px;">⚠️</span>
+        <div>
+          <div style="font-weight: bold;">OpenBlaze - Gemini Compatibility</div>
+          <div style="font-size: 12px; opacity: 0.8;">Gemini's editor is very strict. Try typing slowly or using Ctrl+Shift+Space for snippet picker.</div>
+        </div>
+      </div>
+    `;
+
+    // Style the notification
+    const styles = {
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      background: '#ff9800',
+      color: 'white',
+      padding: '16px',
+      borderRadius: '8px',
+      fontSize: '14px',
+      fontFamily: 'Arial, sans-serif',
+      zIndex: '10000',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+      maxWidth: '320px',
+      opacity: '0',
+      transition: 'opacity 0.3s ease'
+    };
+
+    Object.assign(notification.style, styles);
+    document.body.appendChild(notification);
+
+    // Animate in
+    requestAnimationFrame(() => {
+      notification.style.opacity = '1';
+    });
+
+    // Remove after longer delay
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.style.opacity = '0';
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 300);
+      }
+    }, 5000);
   }
 
   /**
