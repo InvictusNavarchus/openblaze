@@ -96,13 +96,6 @@ class ContentScript {
     // Listen for dynamic content changes
     const observer = new MutationObserver((mutations) => {
       log('debug', `MutationObserver triggered with ${mutations.length} mutations`);
-      
-      // Skip triggering expansion checks if expansion is currently in progress
-      if (this.expansionInProgress) {
-        log('trace', 'MutationObserver skipping expansion check - expansion in progress');
-        return;
-      }
-      
       this.debouncedCheckExpansion();
     });
 
@@ -775,12 +768,6 @@ class ContentScript {
       return;
     }
 
-    // Check for potential duplication already present
-    if (currentText.includes(snippet.content)) {
-      log('warn', `Snippet content already present in element - avoiding duplication`);
-      return;
-    }
-
     log('debug', 'Setting expansion in progress flag', {
       timestamp: Date.now(),
       shortcut,
@@ -1073,7 +1060,7 @@ class ContentScript {
   }
 
   /**
-   * Verify that content was replaced correctly without duplication
+   * Verify that content was replaced correctly
    */
   private verifyContentReplacement(element: HTMLElement, expectedContent: string): boolean {
     const currentContent = element.textContent || '';
@@ -1082,26 +1069,13 @@ class ContentScript {
     // Check if content was inserted
     const hasExpectedContent = currentContent.includes(cleanExpectedContent);
     
-    // Check for duplication by looking for the content appearing twice consecutively
-    const duplicatedPattern = cleanExpectedContent + cleanExpectedContent;
-    const hasUnexpectedDuplication = currentContent.includes(duplicatedPattern);
-    
-    // Also check for space-separated duplication (like "test snippet test snippet")
-    const spaceSeparatedDuplication = cleanExpectedContent + ' ' + cleanExpectedContent;
-    const hasSpaceSeparatedDuplication = currentContent.includes(spaceSeparatedDuplication);
-    
-    const isContentCorrect = hasExpectedContent && !hasUnexpectedDuplication && !hasSpaceSeparatedDuplication;
-    
-    log('debug', `Content verification: ${isContentCorrect}`, {
+    log('debug', `Content verification: ${hasExpectedContent}`, {
       expectedContent: cleanExpectedContent.slice(0, 50),
       actualContent: currentContent.slice(0, 100),
-      hasExpectedContent,
-      hasUnexpectedDuplication,
-      hasSpaceSeparatedDuplication,
-      isContentCorrect
+      hasExpectedContent
     });
     
-    return isContentCorrect;
+    return hasExpectedContent;
   }
 
   /**
@@ -1155,7 +1129,7 @@ class ContentScript {
       // Wait for editor to process
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Verify content was inserted correctly without duplication
+      // Verify content was inserted correctly
       const currentContent = element.textContent || '';
       const contentLines = content.split('\n').filter(line => line.trim());
       
@@ -1163,24 +1137,14 @@ class ContentScript {
       const hasAllExpectedContent = contentLines.every(line => 
         currentContent.includes(line.trim())
       );
-      
-      // Check for unexpected duplication by counting occurrences
-      const hasDuplication = contentLines.some(line => {
-        if (!line.trim()) return false;
-        const occurrences = (currentContent.match(new RegExp(line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-        return occurrences > 1;
-      });
-      
-      const isContentCorrect = hasAllExpectedContent && !hasDuplication;
 
-      log('debug', `Enhanced clipboard insertion - Content check: ${isContentCorrect}`, {
+      log('debug', `Enhanced clipboard insertion - Content check: ${hasAllExpectedContent}`, {
         hasAllExpectedContent,
-        hasDuplication,
         currentContentLength: currentContent.length,
         expectedLines: contentLines.length
       });
       
-      return isContentCorrect;
+      return hasAllExpectedContent;
 
     } catch (error) {
       log('warn', 'Enhanced clipboard insertion failed:', error);
