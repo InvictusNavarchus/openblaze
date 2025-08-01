@@ -96,6 +96,13 @@ class ContentScript {
     // Listen for dynamic content changes
     const observer = new MutationObserver((mutations) => {
       log('debug', `MutationObserver triggered with ${mutations.length} mutations`);
+      
+      // Skip triggering expansion checks if expansion is currently in progress
+      if (this.expansionInProgress) {
+        log('trace', 'MutationObserver skipping expansion check - expansion in progress');
+        return;
+      }
+      
       this.debouncedCheckExpansion();
     });
 
@@ -761,6 +768,19 @@ class ContentScript {
       return;
     }
 
+    // Additional check: verify the shortcut is still present and hasn't been modified
+    const currentText = textInfo.element.textContent || '';
+    if (!currentText.includes(shortcut)) {
+      log('warn', `Shortcut "${shortcut}" no longer found in element - aborting expansion`);
+      return;
+    }
+
+    // Check for potential duplication already present
+    if (currentText.includes(snippet.content)) {
+      log('warn', `Snippet content already present in element - avoiding duplication`);
+      return;
+    }
+
     log('debug', 'Setting expansion in progress flag', {
       timestamp: Date.now(),
       shortcut,
@@ -894,6 +914,17 @@ class ContentScript {
 
     const { element } = context;
 
+    // Double-check that expansion is still in progress and element is still valid
+    if (!this.expansionInProgress) {
+      log('warn', 'Expansion no longer in progress, aborting smart replacement');
+      return;
+    }
+
+    if (!element || !element.isConnected) {
+      log('warn', 'Target element is no longer valid, aborting smart replacement');
+      return;
+    }
+
     try {
       // Step 1: Select the shortcut text to be replaced
       await this.selectShortcutInComplexDOM(element, shortcut);
@@ -964,18 +995,33 @@ class ContentScript {
       
       element.dispatchEvent(inputEvent);
       
-      // Wait a bit and check if content was actually inserted
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Clear any text selection to prevent interference
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+      }
+      
+      // Wait longer for editor to process changes, especially for complex editors like Lexical
+      await new Promise(resolve => setTimeout(resolve, 150));
       
       const currentContent = element.textContent || '';
-      const hasExpectedContent = currentContent.includes(content.replace(/\n/g, ''));
+      const expectedContent = content.replace(/\n/g, '');
       
-      log('debug', `Modern input events - Content check: ${hasExpectedContent}`, {
-        expectedContent: content.slice(0, 50),
-        actualContent: currentContent.slice(0, 50)
+      // More robust content verification - check if content was replaced correctly
+      // without duplication or partial replacement
+      const hasExpectedContent = currentContent.includes(expectedContent);
+      const hasUnexpectedDuplication = currentContent.includes(expectedContent + expectedContent);
+      const isContentCorrect = hasExpectedContent && !hasUnexpectedDuplication;
+      
+      log('debug', `Modern input events - Content check: ${isContentCorrect}`, {
+        expectedContent: expectedContent.slice(0, 50),
+        actualContent: currentContent.slice(0, 100),
+        hasExpectedContent,
+        hasUnexpectedDuplication,
+        isContentCorrect
       });
       
-      return hasExpectedContent;
+      return isContentCorrect;
 
     } catch (error) {
       log('warn', 'Modern input events failed:', error);
@@ -1025,17 +1071,41 @@ class ContentScript {
       const pasteResult = element.dispatchEvent(pasteEvent);
       log('trace', `Enhanced paste result: ${pasteResult}`);
 
+      // Clear any text selection to prevent interference
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+      }
+
       // Wait for editor to process
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Verify content was inserted
+      // Verify content was inserted correctly without duplication
       const currentContent = element.textContent || '';
-      const hasExpectedContent = content.split('\n').every(line => 
-        !line.trim() || currentContent.includes(line.trim())
+      const contentLines = content.split('\n').filter(line => line.trim());
+      
+      // Check if all expected lines are present
+      const hasAllExpectedContent = contentLines.every(line => 
+        currentContent.includes(line.trim())
       );
+      
+      // Check for unexpected duplication by counting occurrences
+      const hasDuplication = contentLines.some(line => {
+        if (!line.trim()) return false;
+        const occurrences = (currentContent.match(new RegExp(line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+        return occurrences > 1;
+      });
+      
+      const isContentCorrect = hasAllExpectedContent && !hasDuplication;
 
-      log('debug', `Enhanced clipboard insertion - Content check: ${hasExpectedContent}`);
-      return hasExpectedContent;
+      log('debug', `Enhanced clipboard insertion - Content check: ${isContentCorrect}`, {
+        hasAllExpectedContent,
+        hasDuplication,
+        currentContentLength: currentContent.length,
+        expectedLines: contentLines.length
+      });
+      
+      return isContentCorrect;
 
     } catch (error) {
       log('warn', 'Enhanced clipboard insertion failed:', error);
